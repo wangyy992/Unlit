@@ -93,12 +93,7 @@ kbd {
   background: #191c2b; font: 12px/1.5 ui-monospace, monospace;
 }
 
-.hint {
-  color: var(--dim); font-size: 13px; text-align: center;
-  margin: 12px auto 0; max-width: 620px; min-height: 2.6em;
-}
-
-.levels { display: flex; justify-content: center; gap: 6px; margin-top: 4px; }
+.levels { display: flex; justify-content: center; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
 .levels button { width: 34px; padding: 5px 0; font-size: 13px; color: var(--dim); }
 .levels button.current { color: var(--lumen); border-color: var(--lumen); }
 
@@ -118,4 +113,4 @@ kbd {
 }
 :root:fullscreen .screen { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
 :root:fullscreen canvas { max-width: none; margin: 0; }
-:root:fullscreen .hint { min-height: 0; margin-top: 10px; }
+:root:fullscreen .levels { margin-top: 10px; }

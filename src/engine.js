@@ -30,8 +30,8 @@
   var PUSH_FACTOR = 0.6;       // 推灯时的移速惩罚
 
   var LIT_THRESHOLD = 0.45;    // 光强超过这个值算「在光里」（= 半径的 55%，正好是肉眼可见的亮核）
-  var DRAIN_RATE = 1 / 0.4;    // 待错地方 0.4 秒消散：够容错，但不足以硬闯光柱
-  var REFILL_RATE = 1 / 0.3;   // 回到安全区 0.3 秒回满
+  var DRAIN_RATE = 1 / 0.28;   // 0.28 秒消散：短于跳跃穿过光柱所需的 0.34 秒，光柱才真拦得住
+  var REFILL_RATE = 1 / 0.25;  // 回到安全区 0.25 秒回满
 
   var DEATH_TIME = 0.55;
   var WIN_TIME = 1.1;
@@ -49,6 +49,9 @@
   var lightDirty = true;
   var muted = false;
   var lastTime = 0;
+  var booted = false;          // 首次载入时还没有用户手势，音频上下文会是挂起的
+  var pushNoise = false;
+  var pushTimer = 0;
 
   var keys = Object.create(null);
   var els = {};
@@ -64,7 +67,7 @@
     keys[e.code] = true;
 
     if (e.code === 'KeyR') restart();
-    if (e.code === 'KeyM') { muted = !muted; syncChrome(); }
+    if (e.code === 'KeyM') { toggleMute(); }
     if (e.code === 'KeyF') toggleFullscreen();
     if (state === 'title' && (e.code === 'Enter' || e.code === 'Space')) start();
     if (state === 'complete' && e.code === 'Enter') { loadLevel(0); }
@@ -87,12 +90,12 @@
 
   // ---------- 音效（WebAudio 现场合成，不需要素材文件）----------
   var audioCtx = null;
-  function beep(freq, dur, type, gain) {
+  function beep(freq, dur, type, gain, delay) {
     if (muted) return;
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      var t = audioCtx.currentTime;
+      var t = audioCtx.currentTime + (delay || 0);
       var osc = audioCtx.createOscillator();
       var g = audioCtx.createGain();
       osc.type = type || 'sine';
@@ -106,9 +109,13 @@
   }
   var SFX = {
     jump: function () { beep(520, 0.09, 'square', 0.035); },
+    land: function () { beep(170, 0.07, 'sine', 0.03); },
+    push: function () { beep(88, 0.06, 'sawtooth', 0.022); },
+    gate: function () { beep(520, 0.10, 'triangle', 0.045); beep(780, 0.18, 'triangle', 0.03, 0.09); },
+    door: function () { beep(920, 0.16, 'sine', 0.035); },
     death: function () { beep(150, 0.35, 'sawtooth', 0.05); },
-    plate: function () { beep(760, 0.12, 'triangle', 0.05); beep(1140, 0.16, 'triangle', 0.03); },
-    win: function () { beep(660, 0.13, 'triangle', 0.05); setTimeout(function () { beep(880, 0.22, 'triangle', 0.05); }, 120); },
+    levelStart: function () { beep(440, 0.10, 'sine', 0.03); beep(660, 0.14, 'sine', 0.025, 0.09); },
+    win: function () { beep(660, 0.13, 'triangle', 0.05); beep(880, 0.22, 'triangle', 0.05, 0.12); },
   };
 
   // ---------- 关卡解析 ----------
@@ -273,7 +280,7 @@
       if (lamp.pushable) {
         // 把灯推到刚好贴着玩家的位置
         var want = (dx > 0 ? p.x + p.w : p.x - lamp.w) - lamp.x;
-        moveLampX(lamp, want);
+        if (Math.abs(moveLampX(lamp, want)) > 0.2) pushNoise = true;
       }
       if (overlap(p, lamp)) {           // 灯推不动 → 玩家被挡住
         p.x = dx > 0 ? lamp.x - p.w : lamp.x + lamp.w;
@@ -454,9 +461,12 @@
     }
 
     p.vy = Math.min(MAX_FALL, p.vy + GRAVITY * dt);
+    var fallSpeed = p.vy;
+    var wasGround = p.onGround;
     p.onGround = false;
     movePlayerX(p, p.vx * dt);
     movePlayerY(p, p.vy * dt);
+    if (p.onGround && !wasGround && fallSpeed > 240) SFX.land();
 
     p.anim += Math.abs(p.vx) * dt * 0.05;
   }
@@ -499,7 +509,7 @@
       if (L.gateOpen[g] === want[g]) continue;
       L.gateOpen[g] = want[g];
       rebuildGeometry();                                          // 门的开合会改变阴影
-      if (want[g]) SFX.plate();
+      if (want[g]) SFX.gate();
     }
   }
 
@@ -528,6 +538,10 @@
     updateLamps(dt);
     updatePlayer(level.lumen, dt, 'ArrowLeft', 'ArrowRight', 'ArrowUp');
     updatePlayer(level.umbra, dt, 'KeyA', 'KeyD', 'KeyW');
+    pushTimer -= dt;
+    if (pushNoise && pushTimer <= 0) { SFX.push(); pushTimer = 0.16; }
+    pushNoise = false;
+
     updatePlates();
     updateMeter(level.lumen, dt);
     updateMeter(level.umbra, dt);
@@ -541,8 +555,12 @@
       return;
     }
 
+    var wasAtDoor = level.lumen.atDoor && level.umbra.atDoor;
+    var lumenWas = level.lumen.atDoor, umbraWas = level.umbra.atDoor;
     level.lumen.atDoor = atDoor(level.lumen, level.doors.lumen);
     level.umbra.atDoor = atDoor(level.umbra, level.doors.umbra);
+    if ((level.lumen.atDoor && !lumenWas) || (level.umbra.atDoor && !umbraWas)) SFX.door();
+    void wasAtDoor;
     if (level.lumen.atDoor && level.umbra.atDoor) {
       state = 'won';
       stateTimer = WIN_TIME;
@@ -754,7 +772,6 @@
   // ---------- 界面外壳 ----------
   function syncChrome() {
     els.levelName.textContent = (levelIndex + 1) + '. ' + level.def.name;
-    els.hint.textContent = level.def.hint;
     els.deaths.textContent = deaths;
     els.mute.textContent = muted ? '🔇 已静音 (M)' : '🔊 音效开 (M)';
     els.lumenBar.style.width = (level.lumen.meter * 100).toFixed(1) + '%';
@@ -779,7 +796,7 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = (i + 1);
-      btn.title = def.name;
+      btn.title = def.name + ' — ' + def.hint;
       btn.disabled = i >= unlocked;
       btn.classList.toggle('current', i === levelIndex);
       btn.addEventListener('click', function () { loadLevel(i); canvas.focus(); });
@@ -808,6 +825,7 @@
     state = 'playing';
     syncChrome();
     fitCanvas();
+    if (booted) SFX.levelStart();
   }
 
   function restart() {
@@ -830,6 +848,12 @@
     canvas.style.height = Math.floor(level.h * scale) + 'px';
   }
 
+  function toggleMute() {
+    muted = !muted;
+    if (!muted) SFX.door();               // 开启时响一下，让人知道确实有声音
+    syncChrome();
+  }
+
   function toggleFullscreen() {
     var el = document.documentElement;
     if (document.fullscreenElement || document.webkitFullscreenElement) {
@@ -840,6 +864,8 @@
   }
 
   function start() {
+    booted = true;
+    beep(0.0001, 0.01, 'sine', 0.0001);   // 借开始按钮这次点击解锁音频
     state = 'playing';
     syncChrome();
     canvas.focus();
@@ -870,12 +896,12 @@
     lampCanvas = document.createElement('canvas');
     lampCtx = lampCanvas.getContext('2d');
 
-    ['levelName', 'hint', 'deaths', 'levels', 'lumenBar', 'umbraBar',
+    ['levelName', 'deaths', 'levels', 'lumenBar', 'umbraBar',
       'lumenMeter', 'umbraMeter', 'title', 'complete', 'mute'].forEach(function (id) {
       els[id] = document.getElementById(id);
     });
 
-    els.mute.addEventListener('click', function () { muted = !muted; syncChrome(); canvas.focus(); });
+    els.mute.addEventListener('click', function () { toggleMute(); canvas.focus(); });
     document.getElementById('fs').addEventListener('click', function () { toggleFullscreen(); canvas.focus(); });
     document.getElementById('startBtn').addEventListener('click', start);
     document.getElementById('replayBtn').addEventListener('click', function () { deaths = 0; loadLevel(0); });
