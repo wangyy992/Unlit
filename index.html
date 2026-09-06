@@ -3,47 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>暗室 · 小游戏</title>
-<meta name="description" content="一个纯静态的休闲游戏站。原生 JS + Canvas，打开就能玩，不用下载不用注册。">
-<link rel="stylesheet" href="assets/site.css">
+<title>光与影 — 双人合作解谜</title>
+<meta name="description" content="一个双人同屏的合作解谜游戏：光灵只能待在光里，影灵只能待在暗处。推动灯，就同时改变了两个人的路。">
+<link rel="stylesheet" href="game.css">
 </head>
 <body>
-<header class="site-head">
-  <h1>暗室</h1>
-  <p>打开就能玩的小游戏。没有下载，没有注册，没有广告。</p>
+<header class="topbar">
+  <h1>光与影</h1>
+  <div class="topbar-right">
+    <button type="button" id="fs" class="ghost">⛶ 全屏 (F)</button>
+    <button type="button" id="mute" class="ghost">🔊 音效开 (M)</button>
+    <button type="button" id="restartBtn" class="ghost">↺ 重来 (R)</button>
+  </div>
 </header>
 
-<main>
-  <ul class="cards">
-    <li class="card">
-      <a href="games/light-and-shadow/index.html">
-        <div class="thumb thumb-ls" aria-hidden="true">
-          <span class="orb lumen"></span>
-          <span class="orb umbra"></span>
-        </div>
-        <div class="body">
-          <h2>光与影</h2>
-          <p class="tagline">双人合作解谜 · 5 关</p>
-          <p class="desc">光灵只能待在光里，影灵只能待在暗处。推动一盏灯，就同时改变了两个人的路。一个键盘，两个人。</p>
-          <p class="meta">键盘 · 双人同屏</p>
-        </div>
-      </a>
-    </li>
+<main class="stage" id="stage">
+  <div class="statusbar">
+    <div class="meter" id="lumenMeter">
+      <span class="tag lumen">光灵</span>
+      <div class="track"><i id="lumenBar"></i></div>
+      <span class="keys">← → ↑</span>
+    </div>
+    <div class="levelinfo">
+      <strong id="levelName">1. 分道</strong>
+      <span>死亡 <b id="deaths">0</b></span>
+    </div>
+    <div class="meter" id="umbraMeter">
+      <span class="keys">A D W</span>
+      <div class="track"><i id="umbraBar"></i></div>
+      <span class="tag umbra">影灵</span>
+    </div>
+  </div>
 
-    <li class="card soon">
-      <div class="thumb thumb-soon" aria-hidden="true">?</div>
-      <div class="body">
-        <h2>下一款</h2>
-        <p class="tagline">还在做</p>
-        <p class="desc">下一个想做的是「回响」：你死后重生，上一条命会变成幽灵，精确重复你之前的每一个操作。要按住两个相隔很远的机关，就得和过去的自己配合。</p>
-        <p class="meta">敬请期待</p>
+  <div class="screen">
+    <canvas id="game" width="960" height="352" tabindex="0"></canvas>
+
+    <div class="overlay" id="title">
+      <h2>光与影</h2>
+      <p class="lead">一个键盘，两个人。</p>
+      <div class="rules">
+        <p><b class="lumen">光灵</b>离开光就会消散 —— 用 <kbd>←</kbd> <kbd>→</kbd> 移动，<kbd>↑</kbd> 跳。</p>
+        <p><b class="umbra">影灵</b>被光照到就会消散 —— 用 <kbd>A</kbd> <kbd>D</kbd> 移动，<kbd>W</kbd> 跳。</p>
+        <p>带光晕的灯可以推着走。推灯，就同时改变了两个人的路。</p>
+        <p>两人<b>同时</b>站在各自的门里才算过关。</p>
       </div>
-    </li>
-  </ul>
+      <button type="button" id="startBtn" class="primary">开始 (Enter)</button>
+    </div>
+
+    <div class="overlay" id="complete" hidden>
+      <h2>全部通关</h2>
+      <p class="lead">五关都过了。后面还会加更多关卡。</p>
+      <button type="button" id="replayBtn" class="primary">再玩一次 (Enter)</button>
+    </div>
+  </div>
+
+  <p class="hint" id="hint"></p>
+  <nav class="levels" id="levels" aria-label="选关"></nav>
 </main>
 
-<footer class="site-foot">
-  <p>纯静态站点 · 原生 JS + Canvas · 无依赖</p>
-</footer>
+<script src="src/levels.js"></script>
+<script src="src/engine.js"></script>
 </body>
 </html>

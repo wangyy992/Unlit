@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #07070d;
   --panel: #11131f;
   --line: #23263a;
@@ -68,7 +69,7 @@ button:disabled { opacity: .3; cursor: not-allowed; }
 
 .screen { position: relative; line-height: 0; }
 canvas {
-  display: block; width: 100%; margin: 0 auto;
+  display: block; width: 100%; max-width: var(--natural-width, 960px); margin: 0 auto;
   border: 1px solid var(--line); border-radius: 10px;
   background: #07070d; outline: none;
 }
@@ -101,7 +102,6 @@ kbd {
 .levels button { width: 34px; padding: 5px 0; font-size: 13px; color: var(--dim); }
 .levels button.current { color: var(--lumen); border-color: var(--lumen); }
 
-.footnote { text-align: center; color: #4d5266; font-size: 12px; margin-top: 18px; }
 
 @media (max-width: 640px) {
   .statusbar { grid-template-columns: 1fr; gap: 6px; }
@@ -109,3 +109,13 @@ kbd {
   .overlay h2 { font-size: 20px; }
   .rules { font-size: 12px; }
 }
+
+/* 全屏：整页铺满，画布按原始比例放到最大 */
+:root:fullscreen body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+:root:fullscreen .stage {
+  flex: 1; min-height: 0; max-width: none; margin: 0;   /* auto 外边距会阻止 flex 项拉伸 */
+  display: flex; flex-direction: column; padding: 14px 24px 10px;
+}
+:root:fullscreen .screen { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+:root:fullscreen canvas { max-width: none; margin: 0; }
+:root:fullscreen .hint { min-height: 0; margin-top: 10px; }

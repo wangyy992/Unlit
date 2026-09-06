@@ -65,6 +65,7 @@
 
     if (e.code === 'KeyR') restart();
     if (e.code === 'KeyM') { muted = !muted; syncChrome(); }
+    if (e.code === 'KeyF') toggleFullscreen();
     if (state === 'title' && (e.code === 'Enter' || e.code === 'Space')) start();
     if (state === 'complete' && e.code === 'Enter') { loadLevel(0); }
 
@@ -159,7 +160,10 @@
             homeY: py + TILE - LAMP_SIZE,
           });
         } else if (ch >= '1' && ch <= '4') {
-          L.plates.push({ tx: tx, ty: ty, x: px, y: py, group: +ch - 1, pressed: false });
+          L.plates.push({ tx: tx, ty: ty, x: px, y: py, group: +ch - 1, hold: false, pressed: false });
+        } else if (ch >= 'a' && ch <= 'd') {
+          // 常压板：只在被压住时开门，松开就关。灯可以当配重压在上面。
+          L.plates.push({ tx: tx, ty: ty, x: px, y: py, group: ch.charCodeAt(0) - 97, hold: true, pressed: false });
         } else if (ch >= 'A' && ch <= 'D') {
           L.gateGroup[i] = ch.charCodeAt(0) - 65;
         }
@@ -366,11 +370,13 @@
 
       lampCtx.clearRect(0, 0, L.w, L.h);
       var g = lampCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      // 透明度近似跟随判定用的线性衰减，让「看得见的亮」= 「会死的亮」
-      g.addColorStop(0.00, 'rgba(255, 232, 178, 0.92)');
-      g.addColorStop(0.30, 'rgba(255, 205, 130, 0.62)');
-      g.addColorStop(0.55, 'rgba(248, 176, 96, 0.40)');
-      g.addColorStop(0.80, 'rgba(226, 140, 68, 0.16)');
+      // 亮度必须在判定边界（半径的 55%）之后迅速收掉，
+      // 否则玩家会看到一片「看着危险其实安全」的光晕，读不准哪里能站。
+      g.addColorStop(0.00, 'rgba(255, 232, 178, 0.95)');
+      g.addColorStop(0.20, 'rgba(255, 212, 142, 0.72)');
+      g.addColorStop(0.40, 'rgba(250, 186, 106, 0.45)');
+      g.addColorStop(0.55, 'rgba(238, 158, 82, 0.22)');
+      g.addColorStop(0.68, 'rgba(214, 128, 62, 0.02)');
       g.addColorStop(1.00, 'rgba(200, 115, 55, 0)');
       lampCtx.fillStyle = g;
       lampCtx.beginPath();
@@ -478,21 +484,23 @@
   }
 
   function updatePlates() {
-    level.plates.forEach(function (pl) {
-      if (pl.pressed) return;
+    var L = level;
+    var want = [false, false, false, false];
+
+    L.plates.forEach(function (pl) {
       var box = { x: pl.x, y: pl.y + TILE - 10, w: TILE, h: 12 };
-      var hit = overlap(level.lumen, box) || overlap(level.umbra, box);
-      if (!hit) {
-        // 灯压在板子上同样有效
-        hit = level.lamps.some(function (m) { return overlap(m, box); });
-      }
-      if (hit) {
-        pl.pressed = true;
-        level.gateOpen[pl.group] = true;
-        rebuildGeometry();
-        SFX.plate();
-      }
+      var on = overlap(L.lumen, box) || overlap(L.umbra, box) ||
+        L.lamps.some(function (m) { return overlap(m, box); });   // 灯也能压住板子
+      pl.pressed = pl.hold ? on : (pl.pressed || on);             // 常闭板踩过一次就锁住
+      if (pl.pressed) want[pl.group] = true;
     });
+
+    for (var g = 0; g < 4; g++) {
+      if (L.gateOpen[g] === want[g]) continue;
+      L.gateOpen[g] = want[g];
+      rebuildGeometry();                                          // 门的开合会改变阴影
+      if (want[g]) SFX.plate();
+    }
   }
 
   function atDoor(p, door) {
@@ -627,6 +635,11 @@
       ctx.fillRect(pl.x + 2, y, TILE - 4, h);
       ctx.fillStyle = pl.pressed ? color : 'rgba(150, 162, 196, 0.9)';
       ctx.fillRect(pl.x + 2, y, TILE - 4, 3);
+      if (pl.hold) {                                    // 常压板：画一对卡口，表示「压住才算」
+        ctx.fillStyle = hexToRgba(color, 0.75);
+        ctx.fillRect(pl.x + 1, y - 5, 3, 6);
+        ctx.fillRect(pl.x + TILE - 4, y - 5, 3, 6);
+      }
 
       var glow = ctx.createRadialGradient(
         pl.x + TILE / 2, y, 0, pl.x + TILE / 2, y, pl.pressed ? 26 : 16);
@@ -790,10 +803,11 @@
     level = parseLevel(window.LEVELS[i]);
     canvas.width = lightCanvas.width = lampCanvas.width = level.w;
     canvas.height = lightCanvas.height = lampCanvas.height = level.h;
-    canvas.style.maxWidth = level.w + 'px';
+    canvas.style.setProperty('--natural-width', level.w + 'px');
     resetLevel();
     state = 'playing';
     syncChrome();
+    fitCanvas();
   }
 
   function restart() {
@@ -801,6 +815,28 @@
     resetLevel();
     state = 'playing';
     syncChrome();
+  }
+
+  // 全屏时按原始比例把画布放到最大；退出时交还给 CSS
+  function fitCanvas() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      canvas.style.width = '';
+      canvas.style.height = '';
+      return;
+    }
+    var box = canvas.parentElement.getBoundingClientRect();
+    var scale = Math.min(box.width / level.w, box.height / level.h);
+    canvas.style.width = Math.floor(level.w * scale) + 'px';
+    canvas.style.height = Math.floor(level.h * scale) + 'px';
+  }
+
+  function toggleFullscreen() {
+    var el = document.documentElement;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    }
   }
 
   function start() {
@@ -840,12 +876,16 @@
     });
 
     els.mute.addEventListener('click', function () { muted = !muted; syncChrome(); canvas.focus(); });
+    document.getElementById('fs').addEventListener('click', function () { toggleFullscreen(); canvas.focus(); });
     document.getElementById('startBtn').addEventListener('click', start);
     document.getElementById('replayBtn').addEventListener('click', function () { deaths = 0; loadLevel(0); });
     document.getElementById('restartBtn').addEventListener('click', function () { restart(); canvas.focus(); });
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('resize', fitCanvas);
+    document.addEventListener('fullscreenchange', fitCanvas);
+    document.addEventListener('webkitfullscreenchange', fitCanvas);
 
     loadProgress();
     loadLevel(0);
