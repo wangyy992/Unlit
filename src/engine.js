@@ -49,6 +49,9 @@
   var lightDirty = true;
   var muted = false;
   var lastTime = 0;
+  var frameCount = 0;
+  var dust = [];
+  var bursts = [];
   var booted = false;          // 首次载入时还没有用户手势，音频上下文会是挂起的
   var pushNoise = false;
   var pushTimer = 0;
@@ -520,6 +523,7 @@
   }
 
   function update(dt) {
+    updateBursts(dt);
     if (state === 'dying') {
       stateTimer -= dt;
       if (stateTimer <= 0) { resetLevel(); state = 'playing'; }
@@ -538,6 +542,7 @@
     updateLamps(dt);
     updatePlayer(level.lumen, dt, 'ArrowLeft', 'ArrowRight', 'ArrowUp');
     updatePlayer(level.umbra, dt, 'KeyA', 'KeyD', 'KeyW');
+    updateDust(dt);
     pushTimer -= dt;
     if (pushNoise && pushTimer <= 0) { SFX.push(); pushTimer = 0.16; }
     pushNoise = false;
@@ -547,6 +552,8 @@
     updateMeter(level.umbra, dt);
 
     if (level.lumen.meter <= 0 || level.umbra.meter <= 0) {
+      var victim = level.lumen.meter <= 0 ? level.lumen : level.umbra;
+      spawnBurst(victim.x + victim.w / 2, victim.y + victim.h / 2, victim === level.lumen);
       deaths++;
       state = 'dying';
       stateTimer = DEATH_TIME;
@@ -595,8 +602,11 @@
     drawDoor(L.doors.umbra, 'umbra', L.umbra.atDoor);
     drawDoor(L.doors.lumen, 'lumen', L.lumen.atDoor);
     drawLamps();
+    drawDust();
     drawPlayer(L.umbra);
     drawPlayer(L.lumen);
+    drawBursts();
+    drawVignette();
 
     if (state === 'dying') {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -609,6 +619,25 @@
     }
   }
 
+  // 四边压暗，把注意力收到画面中间
+  function drawVignette() {
+    var L = level;
+    if (!vignette || vignette.width !== L.w || vignette.height !== L.h) {
+      vignette = document.createElement('canvas');
+      vignette.width = L.w; vignette.height = L.h;
+      var vc = vignette.getContext('2d');
+      var g = vc.createRadialGradient(L.w / 2, L.h / 2, Math.min(L.w, L.h) * 0.35,
+                                      L.w / 2, L.h / 2, Math.max(L.w, L.h) * 0.72);
+      g.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+      vc.fillStyle = g;
+      vc.fillRect(0, 0, L.w, L.h);
+    }
+    ctx.drawImage(vignette, 0, 0);
+  }
+
+  var vignette = null;
+
   function drawTiles() {
     var L = level;
     for (var ty = 0; ty < L.rows; ty++) {
@@ -618,22 +647,42 @@
         var g = L.gateGroup[i];
 
         if (L.walls[i]) {
-          ctx.fillStyle = '#1b1d2b';
+          // 用坐标哈希给每格一点明暗抖动，大片墙面才不会是一块死板的纯色
+          var jitter = (((tx * 73856093) ^ (ty * 19349663)) & 7) - 3.5;
+          ctx.fillStyle = 'rgb(' + (26 + jitter) + ',' + (28 + jitter) + ',' + (42 + jitter) + ')';
           ctx.fillRect(x, y, TILE, TILE);
-          if (!isSolidTile(tx, ty - 1)) {           // 顶面高光，让地形轮廓看得清
-            ctx.fillStyle = '#2b2f45';
-            ctx.fillRect(x, y, TILE, 3);
+
+          var openUp = !isSolidTile(tx, ty - 1);
+          if (openUp) {                              // 受光的顶面：亮边 + 一道细高光
+            ctx.fillStyle = '#2f3450';
+            ctx.fillRect(x, y, TILE, 4);
+            ctx.fillStyle = '#3d4468';
+            ctx.fillRect(x, y, TILE, 1);
           }
+          if (!isSolidTile(tx - 1, ty)) { ctx.fillStyle = '#252a3e'; ctx.fillRect(x, y, 2, TILE); }
+          if (!isSolidTile(tx + 1, ty)) { ctx.fillStyle = '#14161f'; ctx.fillRect(x + TILE - 2, y, 2, TILE); }
+          if (!isSolidTile(tx, ty + 1)) { ctx.fillStyle = '#101219'; ctx.fillRect(x, y + TILE - 3, TILE, 3); }
+
         } else if (g >= 0) {
-          if (L.gateOpen[g]) {
-            ctx.fillStyle = 'rgba(90, 200, 170, 0.10)';
-            ctx.fillRect(x + 12, y, 8, TILE);
+          var col = GATE_COLORS[g];
+          if (L.gateOpen[g]) {                       // 已开：只剩两侧的门框余辉
+            ctx.fillStyle = hexToRgba(col, 0.16);
+            ctx.fillRect(x + 2, y, 2, TILE);
+            ctx.fillRect(x + TILE - 4, y, 2, TILE);
           } else {
-            ctx.fillStyle = '#243040';
+            ctx.fillStyle = '#1e2634';
             ctx.fillRect(x, y, TILE, TILE);
-            ctx.fillStyle = GATE_COLORS[g];
+            // 能量条向上流动，让「关着」这件事是活的
+            var flow = (performance.now() / 900 + tx * 0.13) % 1;
+            var grd = ctx.createLinearGradient(x, y + TILE, x, y);
+            grd.addColorStop(Math.max(0, flow - 0.35), hexToRgba(col, 0.28));
+            grd.addColorStop(flow, hexToRgba(col, 0.95));
+            grd.addColorStop(Math.min(1, flow + 0.35), hexToRgba(col, 0.28));
+            ctx.fillStyle = grd;
             ctx.fillRect(x + 4, y, 3, TILE);
             ctx.fillRect(x + TILE - 7, y, 3, TILE);
+            ctx.fillStyle = hexToRgba(col, 0.07);
+            ctx.fillRect(x + 7, y, TILE - 14, TILE);
           }
         }
       }
@@ -675,35 +724,75 @@
 
   function drawDoor(door, type, active) {
     if (!door) return;
-    var x = door.x, y = door.y - TILE;
     var warm = type === 'lumen';
     var base = warm ? '255, 208, 120' : '164, 130, 255';
     var t = performance.now() / 600;
-    var pulse = active ? 0.55 + 0.2 * Math.sin(t * 3) : 0.24;
+    var pulse = active ? 0.62 + 0.18 * Math.sin(t * 3) : 0.26;
 
-    ctx.fillStyle = 'rgba(' + base + ', ' + (pulse * 0.35) + ')';
-    ctx.fillRect(x + 3, y + 6, TILE - 6, TILE * 2 - 6);
-    ctx.strokeStyle = 'rgba(' + base + ', ' + pulse + ')';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 3.5, y + 6.5, TILE - 7, TILE * 2 - 7);
-    ctx.fillStyle = 'rgba(' + base + ', ' + (pulse + 0.25) + ')';
-    ctx.fillRect(x + 3, y + TILE * 2 - 3, TILE - 6, 3);
+    var x = door.x + 3, w = TILE - 6;
+    var top = door.y - TILE + 6, bottom = door.y + TILE;
+    var r = w / 2;
+
+    ctx.save();
+    ctx.beginPath();                                  // 拱形轮廓：半圆顶 + 直墙
+    ctx.moveTo(x, bottom);
+    ctx.lineTo(x, top + r);
+    ctx.arc(x + r, top + r, r, Math.PI, 0);
+    ctx.lineTo(x + w, bottom);
+    ctx.closePath();
+
+    // 门是墙上的一个洞：内腔画暗，才能在明亮区域里也看得出来
+    ctx.fillStyle = 'rgba(8, 7, 14, 0.88)';
+    ctx.fill();
+    var grd = ctx.createLinearGradient(0, top, 0, bottom);
+    grd.addColorStop(0, 'rgba(' + base + ', 0)');
+    grd.addColorStop(1, 'rgba(' + base + ', ' + (pulse * 0.7) + ')');
+    ctx.fillStyle = grd;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(' + base + ', ' + Math.min(1, pulse + 0.35) + ')';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(' + base + ', ' + Math.min(1, pulse + 0.3) + ')';
+    ctx.fillRect(x, bottom - 3, w, 3);                // 门槛
+
+    if (active) {                                     // 站进去时整扇门亮起来
+      var halo = ctx.createRadialGradient(x + r, bottom - 12, 0, x + r, bottom - 12, 34);
+      halo.addColorStop(0, 'rgba(' + base + ', 0.38)');
+      halo.addColorStop(1, 'rgba(' + base + ', 0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(x - 34, bottom - 46, w + 68, 68);
+    }
   }
 
   function drawLamps() {
     level.lamps.forEach(function (lamp) {
       var cx = lamp.x + lamp.w / 2, cy = lamp.y + lamp.h / 2;
       if (lamp.fixed) {                            // 固定灯：吊在支架上，推不动
-        ctx.strokeStyle = 'rgba(150, 150, 170, 0.5)';
+        ctx.strokeStyle = 'rgba(150, 150, 170, 0.45)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(cx, lamp.y - 8);
+        ctx.moveTo(cx, lamp.y - 10);
         ctx.lineTo(cx, lamp.y + 2);
         ctx.stroke();
+        ctx.fillStyle = 'rgba(150, 150, 170, 0.4)';
+        ctx.fillRect(cx - 6, lamp.y - 12, 12, 3);
       }
-      ctx.fillStyle = lamp.pushable ? '#3b3324' : '#2a2a34';
+
+      ctx.fillStyle = lamp.pushable ? '#3a3226' : '#2b2b35';   // 灯壳
       ctx.fillRect(lamp.x, lamp.y, lamp.w, lamp.h);
-      ctx.strokeStyle = lamp.pushable ? 'rgba(255, 208, 130, 0.9)' : 'rgba(190, 186, 172, 0.45)';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';                   // 底部阴影，做出厚度
+      ctx.fillRect(lamp.x, lamp.y + lamp.h - 4, lamp.w, 4);
+
+      var inner = ctx.createRadialGradient(cx, cy, 0, cx, cy, lamp.w * 0.55);
+      inner.addColorStop(0, 'rgba(255, 248, 224, 0.98)');      // 灯芯
+      inner.addColorStop(0.45, 'rgba(255, 214, 140, 0.75)');
+      inner.addColorStop(1, 'rgba(255, 180, 90, 0.05)');
+      ctx.fillStyle = inner;
+      ctx.fillRect(lamp.x + 3, lamp.y + 3, lamp.w - 6, lamp.h - 6);
+
+      ctx.strokeStyle = lamp.pushable ? 'rgba(255, 214, 140, 0.9)' : 'rgba(190, 186, 172, 0.5)';
       ctx.lineWidth = 2;
       ctx.strokeRect(lamp.x + 1, lamp.y + 1, lamp.w - 2, lamp.h - 2);
 
@@ -715,7 +804,10 @@
       ctx.arc(cx, cy, 22, 0, Math.PI * 2);
       ctx.fill();
 
-      if (lamp.pushable) {                        // 可推的灯：两侧画箭头提示
+      if (lamp.pushable) {                        // 可推的灯：滚轮 + 两侧箭头
+        ctx.fillStyle = 'rgba(20, 16, 10, 0.85)';
+        ctx.beginPath(); ctx.arc(lamp.x + 7, lamp.y + lamp.h - 1, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(lamp.x + lamp.w - 7, lamp.y + lamp.h - 1, 3, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = 'rgba(255, 224, 170, 0.55)';
         [[-7, -1], [lamp.w + 4, 1]].forEach(function (a) {
           ctx.beginPath();
@@ -731,32 +823,56 @@
 
   function drawPlayer(p) {
     var warm = p.type === 'lumen';
-    var cx = p.x + p.w / 2, cy = p.y + p.h / 2;
     var danger = 1 - p.meter;
+    var now = performance.now();
+
+    // 上升拉长、下落压扁 —— 一点点就够，跳跃立刻有了重量感
+    var k = Math.max(-0.16, Math.min(0.16, -p.vy / 3000));
+    var h = p.h * (1 + k), w = p.w * (1 - k * 0.8);
+    var x = p.x + (p.w - w) / 2, y = p.y + (p.h - h);
+    var cx = x + w / 2, cy = y + h / 2;
+
+    if (p.onGround) {                             // 脚下的接触阴影，把人「放」在地面上
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(p.x + p.w / 2, p.y + p.h, p.w * 0.5, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // 角色自带一圈微光，保证在纯黑里也看得见
-    var aura = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30);
-    aura.addColorStop(0, warm ? 'rgba(255, 214, 140, 0.42)' : 'rgba(150, 120, 255, 0.42)');
+    var aura = ctx.createRadialGradient(cx, cy, 0, cx, cy, 32);
+    aura.addColorStop(0, warm ? 'rgba(255, 214, 140, 0.44)' : 'rgba(150, 120, 255, 0.44)');
     aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = aura;
     ctx.beginPath();
-    ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 32, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = warm ? '#ffd77a' : '#9b7bff';
-    if (danger > 0.35) {                          // 濒死时闪烁
-      var blink = 0.55 + 0.45 * Math.sin(performance.now() / (60 + 120 * p.meter));
-      ctx.globalAlpha = 0.45 + 0.55 * blink;
+    if (danger > 0.3) {                           // 濒死时闪烁
+      var flash = 0.55 + 0.45 * Math.sin(now / (55 + 110 * p.meter));
+      ctx.globalAlpha = 0.4 + 0.6 * flash;
     }
-    roundRect(p.x, p.y, p.w, p.h, 5);
+    var body = ctx.createLinearGradient(0, y, 0, y + h);
+    body.addColorStop(0, warm ? '#ffe6a4' : '#b79bff');
+    body.addColorStop(1, warm ? '#f0b846' : '#7f5df0');
+    ctx.fillStyle = body;
+    roundRect(x, y, w, h, 6);
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // 眼睛：朝向移动方向
-    ctx.fillStyle = warm ? '#3a2a08' : '#160f30';
-    var ex = cx + p.facing * 3.5;
-    ctx.fillRect(ex - 4, p.y + 8, 3, 4);
-    ctx.fillRect(ex + 2, p.y + 8, 3, 4);
+    // 眼睛：朝向移动方向，偶尔眨一下
+    p.blink = (p.blink || 0) - 1;
+    if (p.blink < -260) p.blink = 7;
+    var shut = p.blink > 0;
+    ctx.fillStyle = warm ? '#3a2a08' : '#180f34';
+    var ex = cx + p.facing * 3.5, ey = y + h * 0.32;
+    if (shut) {
+      ctx.fillRect(ex - 4, ey + 1, 3, 1.5);
+      ctx.fillRect(ex + 2, ey + 1, 3, 1.5);
+    } else {
+      ctx.fillRect(ex - 4, ey, 3, 4);
+      ctx.fillRect(ex + 2, ey, 3, 4);
+    }
   }
 
   function roundRect(x, y, w, h, r) {
@@ -815,6 +931,80 @@
     try { localStorage.setItem(STORE_KEY, String(unlocked)); } catch (e) { /* 忽略 */ }
   }
 
+  // 浮尘只在光里看得见 —— 正好把这个游戏的主题画出来
+  function seedDust() {
+    dust = [];
+    for (var i = 0; i < 46; i++) {
+      dust.push({
+        x: Math.random() * level.w,
+        y: Math.random() * level.h,
+        vx: (Math.random() - 0.5) * 7,
+        vy: -3 - Math.random() * 7,
+        r: 0.6 + Math.random() * 1.3,
+        lit: 0,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  function updateDust(dt) {
+    for (var i = 0; i < dust.length; i++) {
+      var d = dust[i];
+      d.phase += dt * 1.6;
+      d.x += (d.vx + Math.sin(d.phase) * 5) * dt;
+      d.y += d.vy * dt;
+      if (d.y < -4) { d.y = level.h + 4; d.x = Math.random() * level.w; }
+      if (d.x < -4) d.x = level.w + 4;
+      if (d.x > level.w + 4) d.x = -4;
+      // 光强逐帧只算一部分粒子，避免每帧几千次视线检测
+      if ((frameCount + i) % 5 === 0) d.lit = Math.min(1, lightAt(d.x, d.y) / LIT_THRESHOLD);
+    }
+  }
+
+  function drawDust() {
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < dust.length; i++) {
+      var d = dust[i];
+      if (d.lit < 0.12) continue;                 // 暗处的尘埃本来就看不见
+      ctx.fillStyle = 'rgba(255, 232, 190, ' + (0.30 * Math.min(1, d.lit)) + ')';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function spawnBurst(px, py, warm) {
+    for (var i = 0; i < 22; i++) {
+      var a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 150;
+      bursts.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40,
+                    life: 1, warm: warm });
+    }
+  }
+
+  function updateBursts(dt) {
+    for (var i = bursts.length - 1; i >= 0; i--) {
+      var b = bursts[i];
+      b.life -= dt * 1.8;
+      if (b.life <= 0) { bursts.splice(i, 1); continue; }
+      b.vy += 420 * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+    }
+  }
+
+  function drawBursts() {
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < bursts.length; i++) {
+      var b = bursts[i];
+      ctx.fillStyle = (b.warm ? 'rgba(255, 206, 120, ' : 'rgba(160, 128, 255, ') + (b.life * 0.85) + ')';
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 1.2 + b.life * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   function loadLevel(i) {
     levelIndex = i;
     level = parseLevel(window.LEVELS[i]);
@@ -822,6 +1012,8 @@
     canvas.height = lightCanvas.height = lampCanvas.height = level.h;
     canvas.style.setProperty('--natural-width', level.w + 'px');
     resetLevel();
+    seedDust();
+    bursts = [];
     state = 'playing';
     syncChrome();
     fitCanvas();
@@ -875,6 +1067,7 @@
   function frame(now) {
     var dt = Math.min((now - lastTime) / 1000, 1 / 30);   // 卡顿时钳制步长，避免穿墙
     lastTime = now;
+    frameCount++;
     update(dt);
     draw();
     syncMeters();
