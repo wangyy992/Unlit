@@ -1,0 +1,56 @@
+:root {
+  --bg: #07070d;
+  --panel: #11131f;
+  --line: #23263a;
+  --text: #d8dbe8;
+  --dim: #7c8199;
+  --lumen: #ffd77a;
+  --umbra: #9b7bff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(900px 500px at 50% -5%, #16182e 0%, var(--bg) 65%);
+  color: var(--text);
+  font: 15px/1.7 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.site-head { text-align: center; padding: 64px 20px 36px; }
+.site-head h1 { margin: 0; font-size: 30px; letter-spacing: 10px; font-weight: 600; }
+.site-head p { margin: 10px 0 0; color: var(--dim); font-size: 14px; }
+
+main { max-width: 880px; margin: 0 auto; padding: 0 20px 40px; }
+
+.cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+.card {
+  border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: var(--panel); transition: border-color .18s, transform .18s;
+}
+.card a { color: inherit; text-decoration: none; display: block; height: 100%; }
+.card:not(.soon):hover { border-color: #3d4363; transform: translateY(-2px); }
+.card.soon { opacity: .55; }
+
+.thumb {
+  position: relative; height: 132px;
+  display: flex; align-items: center; justify-content: center; gap: 42px;
+}
+.thumb-ls { background: radial-gradient(150px 90px at 32% 55%, rgba(255,196,118,.34), transparent 72%), #0a0a12; }
+.thumb-soon { background: #0a0a12; color: #2f3348; font-size: 38px; font-weight: 700; }
+
+.orb { width: 20px; height: 26px; border-radius: 6px; display: block; }
+.orb.lumen { background: var(--lumen); box-shadow: 0 0 22px 6px rgba(255,215,122,.42); }
+.orb.umbra { background: var(--umbra); box-shadow: 0 0 22px 6px rgba(155,123,255,.34); }
+
+.body { padding: 16px 18px 18px; border-top: 1px solid var(--line); }
+.body h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 2px; }
+.tagline { margin: 3px 0 8px; font-size: 12.5px; color: var(--lumen); }
+.card.soon .tagline { color: var(--dim); }
+.desc { margin: 0; font-size: 13.5px; color: var(--dim); }
+.meta { margin: 10px 0 0; font-size: 12px; color: #4d5266; }
+
+.site-foot { text-align: center; color: #4d5266; font-size: 12px; padding: 0 20px 48px; }
+.site-foot p { margin: 0; }
