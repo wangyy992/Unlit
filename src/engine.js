@@ -591,6 +591,11 @@
 
     ctx.fillStyle = '#07070d';
     ctx.fillRect(-20, -20, L.w + 40, L.h + 40);
+    if (ART.bg) {                                  // 有背景图就铺上，等比裁切填满
+      var s = Math.max(L.w / ART.bg.naturalWidth, L.h / ART.bg.naturalHeight);
+      var bw = ART.bg.naturalWidth * s, bh = ART.bg.naturalHeight * s;
+      ctx.drawImage(ART.bg, (L.w - bw) / 2, (L.h - bh) / 2, bw, bh);
+    }
     drawTiles();
 
     if (lightDirty) renderLightMap();
@@ -638,32 +643,73 @@
 
   var vignette = null;
 
-  function drawTiles() {
+  // 素材是可选的：任何一张加载失败都只是回退到程序绘制，不影响游戏运行
+  var ART = {};
+  function loadArt(map) {
+    Object.keys(map).forEach(function (key) {
+      var img = new Image();
+      img.onload = function () { if (img.naturalWidth) ART[key] = img; };
+      img.onerror = function () { /* 没有这张图就用程序画 */ };
+      img.src = map[key];
+    });
+  }
+  loadArt({
+    wall: 'art/wall.jpg',
+    bg: 'art/bg.jpg',
+  });
+
+  var tileLayer = null;
+  var tileLayerArt = null;
+
+  // 墙体每帧都重画的话，图案填充要跑几百次；它是静态的，预渲染一次即可
+  function renderTileLayer() {
     var L = level;
+    if (!tileLayer) tileLayer = document.createElement('canvas');
+    tileLayer.width = L.w; tileLayer.height = L.h;
+    var c = tileLayer.getContext('2d');
+    var pat = ART.wall ? c.createPattern(ART.wall, 'repeat') : null;
+
     for (var ty = 0; ty < L.rows; ty++) {
       for (var tx = 0; tx < L.cols; tx++) {
-        var i = ty * L.cols + tx;
+        if (!L.walls[ty * L.cols + tx]) continue;
         var x = tx * TILE, y = ty * TILE;
-        var g = L.gateGroup[i];
-
-        if (L.walls[i]) {
-          // 用坐标哈希给每格一点明暗抖动，大片墙面才不会是一块死板的纯色
+        if (pat) {
+          c.save();
+          c.fillStyle = pat;
+          // 贴图 8 格一个循环：一块面板正好两格宽，和角色尺寸相称
+          c.setTransform(0.5, 0, 0, 0.5, 0, 0);
+          c.fillRect(x * 2, y * 2, TILE * 2, TILE * 2);
+          c.restore();
+        } else {
           var jitter = (((tx * 73856093) ^ (ty * 19349663)) & 7) - 3.5;
-          ctx.fillStyle = 'rgb(' + (26 + jitter) + ',' + (28 + jitter) + ',' + (42 + jitter) + ')';
-          ctx.fillRect(x, y, TILE, TILE);
+          c.fillStyle = 'rgb(' + (26 + jitter) + ',' + (28 + jitter) + ',' + (42 + jitter) + ')';
+          c.fillRect(x, y, TILE, TILE);
+        }
+        if (!isSolidTile(tx, ty - 1)) {            // 受光顶面：亮边 + 细高光
+          c.fillStyle = 'rgba(70, 78, 116, 0.55)';
+          c.fillRect(x, y, TILE, 4);
+          c.fillStyle = 'rgba(96, 106, 150, 0.5)';
+          c.fillRect(x, y, TILE, 1);
+        }
+        if (!isSolidTile(tx - 1, ty)) { c.fillStyle = 'rgba(60, 66, 96, 0.30)'; c.fillRect(x, y, 2, TILE); }
+        if (!isSolidTile(tx + 1, ty)) { c.fillStyle = 'rgba(0, 0, 0, 0.45)'; c.fillRect(x + TILE - 2, y, 2, TILE); }
+        if (!isSolidTile(tx, ty + 1)) { c.fillStyle = 'rgba(0, 0, 0, 0.55)'; c.fillRect(x, y + TILE - 3, TILE, 3); }
+      }
+    }
+  }
 
-          var openUp = !isSolidTile(tx, ty - 1);
-          if (openUp) {                              // 受光的顶面：亮边 + 一道细高光
-            ctx.fillStyle = '#2f3450';
-            ctx.fillRect(x, y, TILE, 4);
-            ctx.fillStyle = '#3d4468';
-            ctx.fillRect(x, y, TILE, 1);
-          }
-          if (!isSolidTile(tx - 1, ty)) { ctx.fillStyle = '#252a3e'; ctx.fillRect(x, y, 2, TILE); }
-          if (!isSolidTile(tx + 1, ty)) { ctx.fillStyle = '#14161f'; ctx.fillRect(x + TILE - 2, y, 2, TILE); }
-          if (!isSolidTile(tx, ty + 1)) { ctx.fillStyle = '#101219'; ctx.fillRect(x, y + TILE - 3, TILE, 3); }
+  function drawTiles() {
+    var L = level;
+    // 贴图可能在开局之后才加载完，加载好了就重建一次
+    if (!tileLayer || tileLayerArt !== !!ART.wall) { tileLayerArt = !!ART.wall; renderTileLayer(); }
+    ctx.drawImage(tileLayer, 0, 0);
 
-        } else if (g >= 0) {
+    for (var ty = 0; ty < L.rows; ty++) {          // 墙已经在离屏图里，这里只画会动的机关门
+      for (var tx = 0; tx < L.cols; tx++) {
+        var g = L.gateGroup[ty * L.cols + tx];
+        if (g < 0) continue;
+        var x = tx * TILE, y = ty * TILE;
+        {
           var col = GATE_COLORS[g];
           if (L.gateOpen[g]) {                       // 已开：只剩两侧的门框余辉
             ctx.fillStyle = hexToRgba(col, 0.16);
@@ -1012,6 +1058,7 @@
     canvas.height = lightCanvas.height = lampCanvas.height = level.h;
     canvas.style.setProperty('--natural-width', level.w + 'px');
     resetLevel();
+    tileLayer = null;          // 关卡尺寸变了，墙体层要重建
     seedDust();
     bursts = [];
     state = 'playing';
