@@ -658,6 +658,8 @@
     bg: 'art/bg.jpg',
     doorLumen: 'art/door-lumen.png',
     doorUmbra: 'art/door-umbra.png',
+    lampFixed: 'art/lamp-fixed.png',
+    lampPush: 'art/lamp-push.png',
   });
 
   var tileLayer = null;
@@ -833,6 +835,21 @@
   function drawLamps() {
     level.lamps.forEach(function (lamp) {
       var cx = lamp.x + lamp.w / 2, cy = lamp.y + lamp.h / 2;
+      var artLamp = lamp.fixed ? ART.lampFixed : ART.lampPush;
+      if (artLamp) {
+        // 贴图灯：按原比例画，底边对齐碰撞盒底部（碰撞盒仍是 30x30，贴图只是外观）
+        var lw = lamp.w + 4;
+        var lh = lw * artLamp.naturalHeight / artLamp.naturalWidth;
+        ctx.drawImage(artLamp, cx - lw / 2, lamp.y + lamp.h - lh, lw, lh);
+        var core = ctx.createRadialGradient(cx, cy - lh * 0.18, 0, cx, cy - lh * 0.18, lw * 0.75);
+        core.addColorStop(0, 'rgba(255, 246, 214, 0.95)');   // 灯芯：正好盖住玻璃罩里的残留
+        core.addColorStop(0.5, 'rgba(255, 208, 130, 0.45)');
+        core.addColorStop(1, 'rgba(255, 180, 90, 0)');
+        ctx.fillStyle = core;
+        ctx.fillRect(cx - lw, cy - lh, lw * 2, lh * 1.5);
+        return;
+      }
+
       if (lamp.fixed) {                            // 固定灯：吊在支架上，推不动
         ctx.strokeStyle = 'rgba(150, 150, 170, 0.45)';
         ctx.lineWidth = 2;
