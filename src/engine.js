@@ -50,6 +50,9 @@
   var muted = false;
   var lastTime = 0;
   var frameCount = 0;
+  // 画布的内部分辨率必须跟上实际显示的物理像素，否则高清屏和全屏下
+  // 相当于把一张 960 宽的图拉到两三千像素上，整个画面是糊的
+  var renderScale = 1;
   var dust = [];
   var bursts = [];
   var booted = false;          // 首次载入时还没有用户手势，音频上下文会是挂起的
@@ -370,7 +373,9 @@
 
   function renderLightMap() {
     var L = level;
-    lightCtx.clearRect(0, 0, L.w, L.h);
+    lightCtx.setTransform(1, 0, 0, 1, 0, 0);
+    lightCtx.clearRect(0, 0, lightCanvas.width, lightCanvas.height);
+    lightCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
     for (var i = 0; i < L.lamps.length; i++) {
       var lamp = L.lamps[i];
@@ -378,7 +383,9 @@
       var cy = lamp.y + lamp.h / 2;
       var r = lamp.radius;
 
-      lampCtx.clearRect(0, 0, L.w, L.h);
+      lampCtx.setTransform(1, 0, 0, 1, 0, 0);
+      lampCtx.clearRect(0, 0, lampCanvas.width, lampCanvas.height);
+      lampCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
       var g = lampCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
       // 亮度必须在判定边界（半径的 55%）之后迅速收掉，
       // 否则玩家会看到一片「看着危险其实安全」的光晕，读不准哪里能站。
@@ -411,8 +418,10 @@
       }
       lampCtx.globalCompositeOperation = 'source-over';
 
+      lightCtx.setTransform(1, 0, 0, 1, 0, 0);   // 两层同尺寸，按物理像素 1:1 叠加
       lightCtx.globalCompositeOperation = 'lighter';
       lightCtx.drawImage(lampCanvas, 0, 0);
+      lightCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     }
     lightCtx.globalCompositeOperation = 'source-over';
     lightDirty = false;
@@ -581,7 +590,7 @@
   // ---------- 绘制 ----------
   function draw() {
     var L = level;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
     // 死亡时轻微抖动
     if (state === 'dying') {
@@ -600,7 +609,7 @@
 
     if (lightDirty) renderLightMap();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(lightCanvas, 0, 0);
+    ctx.drawImage(lightCanvas, 0, 0, L.w, L.h);
     ctx.globalCompositeOperation = 'source-over';
 
     drawPlates();
@@ -614,7 +623,7 @@
     drawVignette();
 
     if (state === 'dying') {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
       ctx.fillStyle = 'rgba(120, 20, 40, ' + (0.45 * (stateTimer / DEATH_TIME)) + ')';
       ctx.fillRect(0, 0, L.w, L.h);
     }
@@ -627,10 +636,12 @@
   // 四边压暗，把注意力收到画面中间
   function drawVignette() {
     var L = level;
-    if (!vignette || vignette.width !== L.w || vignette.height !== L.h) {
+    if (!vignette) {
       vignette = document.createElement('canvas');
-      vignette.width = L.w; vignette.height = L.h;
+      vignette.width = Math.round(L.w * renderScale);
+      vignette.height = Math.round(L.h * renderScale);
       var vc = vignette.getContext('2d');
+      vc.setTransform(renderScale, 0, 0, renderScale, 0, 0);
       var g = vc.createRadialGradient(L.w / 2, L.h / 2, Math.min(L.w, L.h) * 0.35,
                                       L.w / 2, L.h / 2, Math.max(L.w, L.h) * 0.72);
       g.addColorStop(0, 'rgba(0, 0, 0, 0)');
@@ -638,7 +649,7 @@
       vc.fillStyle = g;
       vc.fillRect(0, 0, L.w, L.h);
     }
-    ctx.drawImage(vignette, 0, 0);
+    ctx.drawImage(vignette, 0, 0, L.w, L.h);
   }
 
   var vignette = null;
@@ -669,8 +680,10 @@
   function renderTileLayer() {
     var L = level;
     if (!tileLayer) tileLayer = document.createElement('canvas');
-    tileLayer.width = L.w; tileLayer.height = L.h;
+    tileLayer.width = Math.round(L.w * renderScale);
+    tileLayer.height = Math.round(L.h * renderScale);
     var c = tileLayer.getContext('2d');
+    c.setTransform(renderScale, 0, 0, renderScale, 0, 0);
     var pat = ART.wall ? c.createPattern(ART.wall, 'repeat') : null;
 
     for (var ty = 0; ty < L.rows; ty++) {
@@ -706,7 +719,7 @@
     var L = level;
     // 贴图可能在开局之后才加载完，加载好了就重建一次
     if (!tileLayer || tileLayerArt !== !!ART.wall) { tileLayerArt = !!ART.wall; renderTileLayer(); }
-    ctx.drawImage(tileLayer, 0, 0);
+    ctx.drawImage(tileLayer, 0, 0, L.w, L.h);
 
     for (var ty = 0; ty < L.rows; ty++) {          // 墙已经在离屏图里，这里只画会动的机关门
       for (var tx = 0; tx < L.cols; tx++) {
@@ -1089,9 +1102,8 @@
   function loadLevel(i) {
     levelIndex = i;
     level = parseLevel(window.LEVELS[i]);
-    canvas.width = lightCanvas.width = lampCanvas.width = level.w;
-    canvas.height = lightCanvas.height = lampCanvas.height = level.h;
     canvas.style.setProperty('--natural-width', level.w + 'px');
+    applyScale(true);
     resetLevel();
     tileLayer = null;          // 关卡尺寸变了，墙体层要重建
     seedDust();
@@ -1109,17 +1121,36 @@
     syncChrome();
   }
 
+  // 按「CSS 显示宽度 × 设备像素比」决定画布的内部分辨率。
+  // 量化到 0.5 的倍数，避免窗口尺寸微调时反复重建各层。
+  function applyScale(force) {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.getBoundingClientRect().width || level.w;
+    var s = Math.min(3, Math.max(1, dpr * cssW / level.w));
+    s = Math.round(s * 2) / 2;
+    if (!force && s === renderScale) return;
+    renderScale = s;
+    var pw = Math.round(level.w * s), ph = Math.round(level.h * s);
+    canvas.width = lightCanvas.width = lampCanvas.width = pw;
+    canvas.height = lightCanvas.height = lampCanvas.height = ph;
+    tileLayer = null;                      // 各离屏层都要按新分辨率重建
+    vignette = null;
+    lightDirty = true;
+  }
+
   // 全屏时按原始比例把画布放到最大；退出时交还给 CSS
   function fitCanvas() {
     if (!document.fullscreenElement && !document.webkitFullscreenElement) {
       canvas.style.width = '';
       canvas.style.height = '';
+      applyScale();
       return;
     }
     var box = canvas.parentElement.getBoundingClientRect();
     var scale = Math.min(box.width / level.w, box.height / level.h);
     canvas.style.width = Math.floor(level.w * scale) + 'px';
     canvas.style.height = Math.floor(level.h * scale) + 'px';
+    applyScale();
   }
 
   function toggleMute() {
@@ -1184,7 +1215,7 @@
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('resize', fitCanvas);
+    window.addEventListener('resize', function () { fitCanvas(); applyScale(); });
     document.addEventListener('fullscreenchange', fitCanvas);
     document.addEventListener('webkitfullscreenchange', fitCanvas);
 
