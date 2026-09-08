@@ -656,6 +656,8 @@
   loadArt({
     wall: 'art/wall.jpg',
     bg: 'art/bg.jpg',
+    doorLumen: 'art/door-lumen.png',
+    doorUmbra: 'art/door-umbra.png',
   });
 
   var tileLayer = null;
@@ -778,6 +780,22 @@
     var x = door.x + 3, w = TILE - 6;
     var top = door.y - TILE + 6, bottom = door.y + TILE;
     var r = w / 2;
+
+    var artDoor = warm ? ART.doorLumen : ART.doorUmbra;
+    if (artDoor) {
+      // 贴图门：底边对齐地面（金门原图底部被裁掉一截，正好被地板挡住）
+      var dw = 38, dh = 64;
+      var dx = door.x + (TILE - dw) / 2;
+      ctx.drawImage(artDoor, dx, bottom - dh, dw, dh);
+      if (active) {                                   // 站进去时门口亮起来
+        var g2 = ctx.createRadialGradient(dx + dw / 2, bottom - 14, 0, dx + dw / 2, bottom - 14, 30);
+        g2.addColorStop(0, 'rgba(' + base + ', 0.45)');
+        g2.addColorStop(1, 'rgba(' + base + ', 0)');
+        ctx.fillStyle = g2;
+        ctx.fillRect(dx - 30, bottom - 44, dw + 60, 60);
+      }
+      return;
+    }
 
     ctx.save();
     ctx.beginPath();                                  // 拱形轮廓：半圆顶 + 直墙
