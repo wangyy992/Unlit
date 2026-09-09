@@ -12,9 +12,9 @@
 <header class="topbar">
   <h1>光与影</h1>
   <div class="topbar-right">
-    <button type="button" id="fs" class="ghost">⛶ 全屏 (F)</button>
-    <button type="button" id="mute" class="ghost">🔊 音效开 (M)</button>
-    <button type="button" id="restartBtn" class="ghost">↺ 重来 (R)</button>
+    <button type="button" id="fs" class="icon" title="全屏 (F)" aria-label="全屏 (F)">⛶</button>
+    <button type="button" id="mute" class="icon" title="音效开关 (M)" aria-label="音效开关 (M)">🔊</button>
+    <button type="button" id="restartBtn" class="icon" title="重来本关 (R)" aria-label="重来本关 (R)">↺</button>
   </div>
 </header>
 
@@ -40,7 +40,9 @@
     <canvas id="game" width="960" height="352" tabindex="0"></canvas>
 
     <div class="overlay" id="title">
-      <h2>光与影</h2>
+      <div class="panel">
+        <div class="panel-head">光 与 影</div>
+        <div class="panel-body">
       <p class="lead">一个键盘，两个人。</p>
       <div class="rules">
         <p><b class="lumen">光灵</b>离开光就会消散 —— 用 <kbd>←</kbd> <kbd>→</kbd> 移动，<kbd>↑</kbd> 跳。</p>
@@ -49,11 +51,17 @@
         <p>两人<b>同时</b>站在各自的门里才算过关。</p>
       </div>
       <button type="button" id="startBtn" class="primary">开始 (Enter)</button>
+        </div>
+      </div>
     </div>
 
     <div class="overlay" id="complete" hidden>
-      <h2>全部通关</h2>
-      <button type="button" id="replayBtn" class="primary">再玩一次 (Enter)</button>
+      <div class="panel">
+        <div class="panel-head">全 部 通 关</div>
+        <div class="panel-body">
+          <button type="button" id="replayBtn" class="primary">再玩一次 (Enter)</button>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -138,83 +138,35 @@
       var t = audioCtx.currentTime + (delay || 0);
       var osc = audioCtx.createOscillator();
       var g = audioCtx.createGain();
+      var lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';                       // 削掉刺耳的高次谐波
+      lp.frequency.value = 2400;
       osc.type = type || 'sine';
       osc.frequency.setValueAtTime(freq, t);
-      g.gain.setValueAtTime(gain || 0.06, t);
+      // 瞬间起音会产生爆音，听着「一惊一乍」；给一小段起音坡就柔和了
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain || 0.04, t + 0.014);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      osc.connect(g).connect(audioCtx.destination);
+      osc.connect(lp).connect(g).connect(audioCtx.destination);
       osc.start(t);
       osc.stop(t + dur);
     } catch (err) { /* 音频不可用就静默跳过 */ }
   }
   var SFX = {
-    jump: function () { beep(520, 0.09, 'square', 0.035); },
-    land: function () { beep(170, 0.07, 'sine', 0.03); },
-    push: function () { beep(88, 0.06, 'sawtooth', 0.022); },
-    gate: function () { beep(520, 0.10, 'triangle', 0.045); beep(780, 0.18, 'triangle', 0.03, 0.09); },
-    door: function () { beep(920, 0.16, 'sine', 0.035); },
-    death: function () { beep(150, 0.35, 'sawtooth', 0.05); },
-    levelStart: function () { beep(440, 0.10, 'sine', 0.03); beep(660, 0.14, 'sine', 0.025, 0.09); },
-    win: function () { beep(660, 0.13, 'triangle', 0.05); beep(880, 0.22, 'triangle', 0.05, 0.12); },
+    jump: function () { beep(430, 0.10, 'triangle', 0.020); },
+    land: function () { beep(150, 0.08, 'sine', 0.018); },
+    push: function () { beep(80, 0.07, 'triangle', 0.014); },
+    gate: function () { beep(440, 0.14, 'sine', 0.026); beep(660, 0.22, 'sine', 0.018, 0.10); },
+    door: function () { beep(720, 0.20, 'sine', 0.022); },
+    death: function () { beep(160, 0.40, 'triangle', 0.030); },
+    levelStart: function () { beep(392, 0.14, 'sine', 0.018); beep(587, 0.20, 'sine', 0.015, 0.10); },
+    win: function () { beep(587, 0.16, 'sine', 0.028); beep(784, 0.28, 'sine', 0.028, 0.13); },
     // 两个角色的脚步分开：光灵清脆，影灵沉闷而轻 —— 听声就能分出是谁在走
     step: function (type) {
-      if (type === 'lumen') footstep(1050, 0.055, 0.030);
-      else footstep(560, 0.070, 0.020);
+      if (type === 'lumen') footstep(900, 0.055, 0.018);
+      else footstep(520, 0.070, 0.013);
     },
   };
-
-  // ---------- 环境配乐：低沉的小三和弦垫底 + 偶尔一声远处的钟 ----------
-  var ambient = null;
-
-  function startAmbient() {
-    if (ambient) return;
-    try {
-      ensureAudio();
-      var t = audioCtx.currentTime;
-      var master = audioCtx.createGain();
-      master.gain.setValueAtTime(0, t);
-      master.gain.linearRampToValueAtTime(0.05, t + 6);      // 缓慢淡入，别一上来就压住音效
-      var lp = audioCtx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(400, t);
-      lp.Q.value = 0.6;
-      lp.connect(master).connect(audioCtx.destination);
-
-      // 极慢的滤波扫动，让长音不至于死板
-      var lfo = audioCtx.createOscillator();
-      lfo.frequency.value = 0.045;
-      var lfoAmt = audioCtx.createGain();
-      lfoAmt.gain.value = 170;
-      lfo.connect(lfoAmt).connect(lp.frequency);
-      lfo.start(t);
-
-      var oscs = [lfo];
-      [110, 130.81, 164.81].forEach(function (f, i) {        // A 小三和弦
-        var o = audioCtx.createOscillator();
-        o.type = 'sine';
-        o.frequency.value = f * (1 + (i - 1) * 0.0016);      // 轻微失谐，产生缓慢的拍频
-        var g = audioCtx.createGain();
-        g.gain.value = [0.55, 0.3, 0.3][i];
-        o.connect(g).connect(lp);
-        o.start(t);
-        oscs.push(o);
-      });
-
-      ambient = { master: master, oscs: oscs, timer: 0 };
-      scheduleBell();
-    } catch (err) { /* 音频不可用就静默跳过 */ }
-  }
-
-  function scheduleBell() {
-    if (!ambient) return;
-    ambient.timer = setTimeout(function () {
-      if (ambient && !muted) {
-        var notes = [440, 523.25, 587.33, 659.25, 880];
-        beep(notes[(Math.random() * notes.length) | 0], 2.6, 'sine', 0.018);
-      }
-      scheduleBell();
-    }, 9000 + Math.random() * 10000);
-  }
 
   // ---------- 关卡解析 ----------
   function parseLevel(def) {
@@ -231,6 +183,7 @@
       gateGroup: new Int8Array(cols * rows),
       gateOpen: [false, false, false, false],
       plates: [],
+      plateRuns: [],
       lamps: [],
       doors: {},
       edges: [],
@@ -274,6 +227,21 @@
         }
       }
     }
+    // 同一行相邻且同组的压力板本来就控制同一扇门（做成多格只是为了
+    // 防止玩家从高处跳下的抛物线越过窄板）。逐格重复贴图会看起来像
+    // 好几个按钮，所以合并成一个装置来画。
+    L.plates.slice().sort(function (a, b) { return a.ty - b.ty || a.tx - b.tx; })
+      .forEach(function (pl) {
+        var last = L.plateRuns[L.plateRuns.length - 1];
+        if (last && last.ty === pl.ty && last.group === pl.group && last.hold === pl.hold &&
+            pl.tx === last.tx + last.w) {
+          last.w++;
+          last.items.push(pl);
+        } else {
+          L.plateRuns.push({ tx: pl.tx, ty: pl.ty, w: 1, x: pl.x, y: pl.y,
+                             group: pl.group, hold: pl.hold, items: [pl] });
+        }
+      });
     return L;
   }
 
@@ -481,12 +449,12 @@
       var g = lampCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
       // 亮度必须在判定边界（半径的 55%）之后迅速收掉，
       // 否则玩家会看到一片「看着危险其实安全」的光晕，读不准哪里能站。
-      g.addColorStop(0.00, 'rgba(255, 232, 178, 0.95)');
-      g.addColorStop(0.20, 'rgba(255, 212, 142, 0.72)');
-      g.addColorStop(0.40, 'rgba(250, 186, 106, 0.45)');
-      g.addColorStop(0.55, 'rgba(238, 158, 82, 0.22)');
-      g.addColorStop(0.68, 'rgba(214, 128, 62, 0.02)');
-      g.addColorStop(1.00, 'rgba(200, 115, 55, 0)');
+      g.addColorStop(0.00, 'rgba(255, 246, 214, 0.96)');   // 核心接近白，边缘转琥珀，
+      g.addColorStop(0.18, 'rgba(255, 219, 152, 0.74)');   // 亮区内部才有冷暖层次，
+      g.addColorStop(0.40, 'rgba(248, 180, 100, 0.46)');   // 不至于糊成一片平黄
+      g.addColorStop(0.55, 'rgba(232, 146, 74, 0.22)');
+      g.addColorStop(0.68, 'rgba(206, 118, 56, 0.02)');
+      g.addColorStop(1.00, 'rgba(190, 105, 50, 0)');
       lampCtx.fillStyle = g;
       lampCtx.beginPath();
       lampCtx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -714,7 +682,8 @@
     shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
     shadowCtx.globalCompositeOperation = 'source-over';
     shadowCtx.clearRect(0, 0, shadowCanvas.width, shadowCanvas.height);
-    shadowCtx.fillStyle = 'rgba(5, 5, 13, 0.88)';   // 别压到纯黑，暗处的地形仍要可读
+    shadowCtx.fillStyle = 'rgba(6, 10, 24, 0.89)';  // 深蓝而非中性黑：与暖光拉开色温差；
+    // 也别压到纯黑，暗处的地形仍要可读
     shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
     shadowCtx.globalCompositeOperation = 'destination-out';
     shadowCtx.drawImage(lightCanvas, 0, 0);          // 光照图的 alpha 就是「挖掉多少」
@@ -725,7 +694,7 @@
     ctx.restore();
 
     ctx.globalCompositeOperation = 'lighter';        // 只留一点暖色辉光做氛围
-    ctx.globalAlpha = 0.20;
+    ctx.globalAlpha = 0.24;
     ctx.drawImage(lightCanvas, 0, 0, L.w, L.h);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -764,7 +733,7 @@
       var g = vc.createRadialGradient(L.w / 2, L.h / 2, Math.min(L.w, L.h) * 0.35,
                                       L.w / 2, L.h / 2, Math.max(L.w, L.h) * 0.72);
       g.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      g.addColorStop(1, 'rgba(0, 0, 0, 0.32)');
+      g.addColorStop(1, 'rgba(4, 8, 22, 0.34)');
       vc.fillStyle = g;
       vc.fillRect(0, 0, L.w, L.h);
     }
@@ -895,41 +864,43 @@
   var GATE_COLORS = ['#6fe3c4', '#7fb3ff', '#d79bff', '#ffb37f'];
 
   function drawPlates() {
-    level.plates.forEach(function (pl) {
-      var color = GATE_COLORS[pl.group];
-      var h = pl.pressed ? 5 : 10;
-      var y = pl.y + TILE - h;
+    level.plateRuns.forEach(function (run) {
+      var color = GATE_COLORS[run.group];
+      var pressed = run.items.some(function (pl) { return pl.pressed; });
+      var w = run.w * TILE;                             // 整条压力板画成一个装置
+      var cx = run.x + w / 2;
 
       if (ART.pressurePlate) {
-        var ph = pl.pressed ? 10 : 15;
-        ctx.drawImage(ART.pressurePlate, pl.x - 3, pl.y + TILE - ph, TILE + 6, ph);
-        ctx.fillStyle = hexToRgba(color, pl.pressed ? 0.44 : 0.24);
-        ctx.fillRect(pl.x + 5, pl.y + TILE - ph + 4, TILE - 10, 3);
-        if (pl.hold) {
+        var ph = pressed ? 10 : 15;
+        ctx.drawImage(ART.pressurePlate, run.x - 3, run.y + TILE - ph, w + 6, ph);
+        ctx.fillStyle = hexToRgba(color, pressed ? 0.44 : 0.24);
+        ctx.fillRect(run.x + 5, run.y + TILE - ph + 4, w - 10, 3);
+        if (run.hold) {                                 // 常压板：两端卡口，表示「压住才算」
           ctx.strokeStyle = hexToRgba(color, 0.9);
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(pl.x + 1, pl.y + TILE - ph - 2, TILE - 2, ph + 2);
+          ctx.strokeRect(run.x + 1, run.y + TILE - ph - 2, w - 2, ph + 2);
         }
         return;
       }
 
+      var h = pressed ? 5 : 10;
+      var y = run.y + TILE - h;
       // 底座 + 与机关门同色的顶面，让「这块板对应那扇门」一眼可读
       ctx.fillStyle = 'rgba(20, 24, 38, 0.9)';
-      ctx.fillRect(pl.x + 2, y, TILE - 4, h);
-      ctx.fillStyle = pl.pressed ? color : 'rgba(150, 162, 196, 0.9)';
-      ctx.fillRect(pl.x + 2, y, TILE - 4, 3);
-      if (pl.hold) {                                    // 常压板：画一对卡口，表示「压住才算」
+      ctx.fillRect(run.x + 2, y, w - 4, h);
+      ctx.fillStyle = pressed ? color : 'rgba(150, 162, 196, 0.9)';
+      ctx.fillRect(run.x + 2, y, w - 4, 3);
+      if (run.hold) {
         ctx.fillStyle = hexToRgba(color, 0.75);
-        ctx.fillRect(pl.x + 1, y - 5, 3, 6);
-        ctx.fillRect(pl.x + TILE - 4, y - 5, 3, 6);
+        ctx.fillRect(run.x + 1, y - 5, 3, 6);
+        ctx.fillRect(run.x + w - 4, y - 5, 3, 6);
       }
 
-      var glow = ctx.createRadialGradient(
-        pl.x + TILE / 2, y, 0, pl.x + TILE / 2, y, pl.pressed ? 26 : 16);
-      glow.addColorStop(0, hexToRgba(color, pl.pressed ? 0.5 : 0.22));
+      var glow = ctx.createRadialGradient(cx, y, 0, cx, y, pressed ? w * 0.8 : w * 0.5);
+      glow.addColorStop(0, hexToRgba(color, pressed ? 0.5 : 0.22));
       glow.addColorStop(1, hexToRgba(color, 0));
       ctx.fillStyle = glow;
-      ctx.fillRect(pl.x - 12, y - 22, TILE + 24, 26);
+      ctx.fillRect(run.x - 12, y - 22, w + 24, 26);
     });
   }
 
@@ -1148,7 +1119,8 @@
   function syncChrome() {
     els.levelName.textContent = (levelIndex + 1) + '. ' + level.def.name;
     els.deaths.textContent = deaths;
-    els.mute.textContent = muted ? '🔇 已静音 (M)' : '🔊 音效开 (M)';
+    els.mute.textContent = muted ? '🔇' : '🔊';
+    els.mute.title = muted ? '已静音 (M)' : '音效开 (M)';
     els.lumenBar.style.width = (level.lumen.meter * 100).toFixed(1) + '%';
     els.umbraBar.style.width = (level.umbra.meter * 100).toFixed(1) + '%';
     els.lumenMeter.classList.toggle('danger', level.lumen.meter < 0.4);
@@ -1324,13 +1296,7 @@
 
   function toggleMute() {
     muted = !muted;
-    if (ambient) {
-      var t = audioCtx.currentTime;
-      ambient.master.gain.cancelScheduledValues(t);
-      ambient.master.gain.setValueAtTime(ambient.master.gain.value, t);
-      ambient.master.gain.linearRampToValueAtTime(muted ? 0 : 0.05, t + 0.4);
-    }
-    if (!muted) { startAmbient(); SFX.door(); }   // 开启时响一下，让人知道确实有声音
+    if (!muted) SFX.door();               // 开启时响一下，让人知道确实有声音
     syncChrome();
   }
 
@@ -1345,7 +1311,6 @@
 
   function start() {
     booted = true;
-    startAmbient();
     beep(0.0001, 0.01, 'sine', 0.0001);   // 借开始按钮这次点击解锁音频
     state = 'playing';
     syncChrome();
