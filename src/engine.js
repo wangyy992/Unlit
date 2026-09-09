@@ -608,10 +608,29 @@
     drawTiles();
 
     if (lightDirty) renderLightMap();
-    ctx.globalCompositeOperation = 'lighter';
+
+    // 关键：光不是加上去的，而是把盖在场景上的黑暗「挖」开。
+    // 加法合成会把亮区推到饱和，纹理全被烧掉 —— 照亮的地方反而比暗处更没细节。
+    shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
+    shadowCtx.globalCompositeOperation = 'source-over';
+    shadowCtx.clearRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+    shadowCtx.fillStyle = 'rgba(5, 5, 13, 0.88)';   // 别压到纯黑，暗处的地形仍要可读
+    shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+    shadowCtx.globalCompositeOperation = 'destination-out';
+    shadowCtx.drawImage(lightCanvas, 0, 0);          // 光照图的 alpha 就是「挖掉多少」
+    shadowCtx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(shadowCanvas, 0, 0);
+    ctx.restore();
+
+    ctx.globalCompositeOperation = 'lighter';        // 只留一点暖色辉光做氛围
+    ctx.globalAlpha = 0.20;
     ctx.drawImage(lightCanvas, 0, 0, L.w, L.h);
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
+    drawGates();
     drawPlates();
     drawDoor(L.doors.umbra, 'umbra', L.umbra.atDoor);
     drawDoor(L.doors.lumen, 'lumen', L.lumen.atDoor);
@@ -645,7 +664,7 @@
       var g = vc.createRadialGradient(L.w / 2, L.h / 2, Math.min(L.w, L.h) * 0.35,
                                       L.w / 2, L.h / 2, Math.max(L.w, L.h) * 0.72);
       g.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      g.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0.32)');
       vc.fillStyle = g;
       vc.fillRect(0, 0, L.w, L.h);
     }
@@ -653,6 +672,7 @@
   }
 
   var vignette = null;
+  var shadowCanvas = null, shadowCtx = null;
 
   // 素材是可选的：任何一张加载失败都只是回退到程序绘制，不影响游戏运行
   var ART = {};
@@ -725,7 +745,11 @@
     if (!tileLayer || tileLayerArt !== !!ART.wall) { tileLayerArt = !!ART.wall; renderTileLayer(); }
     ctx.drawImage(tileLayer, 0, 0, L.w, L.h);
 
-    for (var ty = 0; ty < L.rows; ty++) {          // 墙已经在离屏图里，这里只画会动的机关门
+  }
+
+  function drawGates() {
+    var L = level;
+    for (var ty = 0; ty < L.rows; ty++) {
       for (var tx = 0; tx < L.cols; tx++) {
         var g = L.gateGroup[ty * L.cols + tx];
         if (g < 0) continue;
@@ -880,8 +904,8 @@
       var artLamp = lamp.fixed ? ART.lampFixed : ART.lampPush;
       if (artLamp) {
         // 贴图灯：按原比例画，底边对齐碰撞盒底部（碰撞盒仍是 30x30，贴图只是外观）
-        var lw = lamp.w + 4;
-        var lh = lw * artLamp.naturalHeight / artLamp.naturalWidth;
+        var lh = 46;                                  // 按高度统一，两张贴图长宽比不同
+        var lw = lh * artLamp.naturalWidth / artLamp.naturalHeight;
         ctx.drawImage(artLamp, cx - lw / 2, lamp.y + lamp.h - lh, lw, lh);
         var core = ctx.createRadialGradient(cx, cy - lh * 0.18, 0, cx, cy - lh * 0.18, lw * 0.75);
         core.addColorStop(0, 'rgba(255, 246, 214, 0.95)');   // 灯芯：正好盖住玻璃罩里的残留
@@ -1171,8 +1195,9 @@
     if (!force && Math.abs(s - renderScale) < 0.01) return;
     renderScale = s;
     var pw = Math.round(level.w * s), ph = Math.round(level.h * s);
-    canvas.width = lightCanvas.width = lampCanvas.width = pw;
-    canvas.height = lightCanvas.height = lampCanvas.height = ph;
+    if (!shadowCanvas) { shadowCanvas = document.createElement('canvas'); shadowCtx = shadowCanvas.getContext('2d'); }
+    canvas.width = lightCanvas.width = lampCanvas.width = shadowCanvas.width = pw;
+    canvas.height = lightCanvas.height = lampCanvas.height = shadowCanvas.height = ph;
     [ctx, lightCtx, lampCtx].forEach(function (c) {
       c.imageSmoothingEnabled = true;
       c.imageSmoothingQuality = 'high';
