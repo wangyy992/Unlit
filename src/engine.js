@@ -96,11 +96,45 @@
 
   // ---------- 音效（WebAudio 现场合成，不需要素材文件）----------
   var audioCtx = null;
+  var noiseBuf = null;
+
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  // 脚步声要用滤波白噪声 —— 纯振荡器只能出「哔」，做不出踩踏的质感
+  function footstep(freq, dur, gain) {
+    if (muted) return;
+    try {
+      ensureAudio();
+      if (!noiseBuf) {
+        noiseBuf = audioCtx.createBuffer(1, (audioCtx.sampleRate * 0.25) | 0, audioCtx.sampleRate);
+        var d = noiseBuf.getChannelData(0);
+        for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      var t = audioCtx.currentTime;
+      var src = audioCtx.createBufferSource();
+      src.buffer = noiseBuf;
+      src.playbackRate.value = 0.85 + Math.random() * 0.3;   // 每步略有差异，免得像机器
+      var bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = freq * (0.88 + Math.random() * 0.24);
+      bp.Q.value = 1.5;
+      var g = audioCtx.createGain();
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(bp).connect(g).connect(audioCtx.destination);
+      src.start(t);
+      src.stop(t + dur);
+    } catch (err) { /* 音频不可用就静默跳过 */ }
+  }
+
   function beep(freq, dur, type, gain, delay) {
     if (muted) return;
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      ensureAudio();
       var t = audioCtx.currentTime + (delay || 0);
       var osc = audioCtx.createOscillator();
       var g = audioCtx.createGain();
@@ -122,7 +156,65 @@
     death: function () { beep(150, 0.35, 'sawtooth', 0.05); },
     levelStart: function () { beep(440, 0.10, 'sine', 0.03); beep(660, 0.14, 'sine', 0.025, 0.09); },
     win: function () { beep(660, 0.13, 'triangle', 0.05); beep(880, 0.22, 'triangle', 0.05, 0.12); },
+    // 两个角色的脚步分开：光灵清脆，影灵沉闷而轻 —— 听声就能分出是谁在走
+    step: function (type) {
+      if (type === 'lumen') footstep(1050, 0.055, 0.030);
+      else footstep(560, 0.070, 0.020);
+    },
   };
+
+  // ---------- 环境配乐：低沉的小三和弦垫底 + 偶尔一声远处的钟 ----------
+  var ambient = null;
+
+  function startAmbient() {
+    if (ambient) return;
+    try {
+      ensureAudio();
+      var t = audioCtx.currentTime;
+      var master = audioCtx.createGain();
+      master.gain.setValueAtTime(0, t);
+      master.gain.linearRampToValueAtTime(0.05, t + 6);      // 缓慢淡入，别一上来就压住音效
+      var lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(400, t);
+      lp.Q.value = 0.6;
+      lp.connect(master).connect(audioCtx.destination);
+
+      // 极慢的滤波扫动，让长音不至于死板
+      var lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 0.045;
+      var lfoAmt = audioCtx.createGain();
+      lfoAmt.gain.value = 170;
+      lfo.connect(lfoAmt).connect(lp.frequency);
+      lfo.start(t);
+
+      var oscs = [lfo];
+      [110, 130.81, 164.81].forEach(function (f, i) {        // A 小三和弦
+        var o = audioCtx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f * (1 + (i - 1) * 0.0016);      // 轻微失谐，产生缓慢的拍频
+        var g = audioCtx.createGain();
+        g.gain.value = [0.55, 0.3, 0.3][i];
+        o.connect(g).connect(lp);
+        o.start(t);
+        oscs.push(o);
+      });
+
+      ambient = { master: master, oscs: oscs, timer: 0 };
+      scheduleBell();
+    } catch (err) { /* 音频不可用就静默跳过 */ }
+  }
+
+  function scheduleBell() {
+    if (!ambient) return;
+    ambient.timer = setTimeout(function () {
+      if (ambient && !muted) {
+        var notes = [440, 523.25, 587.33, 659.25, 880];
+        beep(notes[(Math.random() * notes.length) | 0], 2.6, 'sine', 0.018);
+      }
+      scheduleBell();
+    }, 9000 + Math.random() * 10000);
+  }
 
   // ---------- 关卡解析 ----------
   function parseLevel(def) {
@@ -479,6 +571,14 @@
     movePlayerX(p, p.vx * dt);
     movePlayerY(p, p.vy * dt);
     if (p.onGround && !wasGround && fallSpeed > 240) SFX.land();
+
+    // 按位移触发脚步：按时间触发的话，减速时步频不变会很假
+    if (p.onGround) {
+      p.stepDist = (p.stepDist || 0) + Math.abs(p.vx) * dt;
+      if (p.stepDist > 88) { p.stepDist = 0; SFX.step(p.type); }
+    } else {
+      p.stepDist = 70;                    // 落地后很快踏出第一步
+    }
 
     p.anim += Math.abs(p.vx) * dt * 0.05;
   }
@@ -1224,7 +1324,13 @@
 
   function toggleMute() {
     muted = !muted;
-    if (!muted) SFX.door();               // 开启时响一下，让人知道确实有声音
+    if (ambient) {
+      var t = audioCtx.currentTime;
+      ambient.master.gain.cancelScheduledValues(t);
+      ambient.master.gain.setValueAtTime(ambient.master.gain.value, t);
+      ambient.master.gain.linearRampToValueAtTime(muted ? 0 : 0.05, t + 0.4);
+    }
+    if (!muted) { startAmbient(); SFX.door(); }   // 开启时响一下，让人知道确实有声音
     syncChrome();
   }
 
@@ -1239,6 +1345,7 @@
 
   function start() {
     booted = true;
+    startAmbient();
     beep(0.0001, 0.01, 'sine', 0.0001);   // 借开始按钮这次点击解锁音频
     state = 'playing';
     syncChrome();
