@@ -671,6 +671,10 @@
     doorUmbra: 'art/door-umbra.png',
     lampFixed: 'art/lamp-fixed.png',
     lampPush: 'art/lamp-push.png',
+    ghostLumen: 'art/ghost-lumen.png',
+    ghostUmbra: 'art/ghost-umbra.png',
+    pressurePlate: 'art/pressure-plate.png',
+    gateBlock: 'art/gate-block.png',
   });
 
   var tileLayer = null;
@@ -732,6 +736,18 @@
             ctx.fillStyle = hexToRgba(col, 0.16);
             ctx.fillRect(x + 2, y, 2, TILE);
             ctx.fillRect(x + TILE - 4, y, 2, TILE);
+          } else if (ART.gateBlock) {
+            // 连续的竖向门只绘制一次完整机构，避免把门头和底座逐格重复。
+            if (ty > 0 && L.gateGroup[(ty - 1) * L.cols + tx] === g) continue;
+            var run = 1;
+            while (ty + run < L.rows && L.gateGroup[(ty + run) * L.cols + tx] === g) run++;
+            ctx.drawImage(ART.gateBlock, x - 2, y, TILE + 4, run * TILE);
+            var gateGlow = ctx.createLinearGradient(x, y, x + TILE, y);
+            gateGlow.addColorStop(0, hexToRgba(col, 0));
+            gateGlow.addColorStop(0.5, hexToRgba(col, 0.38));
+            gateGlow.addColorStop(1, hexToRgba(col, 0));
+            ctx.fillStyle = gateGlow;
+            ctx.fillRect(x + 6, y + 7, TILE - 12, run * TILE - 14);
           } else {
             ctx.fillStyle = '#1e2634';
             ctx.fillRect(x, y, TILE, TILE);
@@ -759,6 +775,19 @@
       var color = GATE_COLORS[pl.group];
       var h = pl.pressed ? 5 : 10;
       var y = pl.y + TILE - h;
+
+      if (ART.pressurePlate) {
+        var ph = pl.pressed ? 10 : 15;
+        ctx.drawImage(ART.pressurePlate, pl.x - 3, pl.y + TILE - ph, TILE + 6, ph);
+        ctx.fillStyle = hexToRgba(color, pl.pressed ? 0.44 : 0.24);
+        ctx.fillRect(pl.x + 5, pl.y + TILE - ph + 4, TILE - 10, 3);
+        if (pl.hold) {
+          ctx.strokeStyle = hexToRgba(color, 0.9);
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(pl.x + 1, pl.y + TILE - ph - 2, TILE - 2, ph + 2);
+        }
+        return;
+      }
 
       // 底座 + 与机关门同色的顶面，让「这块板对应那扇门」一眼可读
       ctx.fillStyle = 'rgba(20, 24, 38, 0.9)';
@@ -946,6 +975,18 @@
       var flash = 0.55 + 0.45 * Math.sin(now / (55 + 110 * p.meter));
       ctx.globalAlpha = 0.4 + 0.6 * flash;
     }
+    var ghostArt = warm ? ART.ghostLumen : ART.ghostUmbra;
+    if (ghostArt) {
+      // 美术角色略大于碰撞盒，让轮廓和微光在 32px 网格里仍然清楚。
+      var spriteW = 31 * (1 - k * 0.45), spriteH = 31 * (1 + k * 0.55);
+      ctx.save();
+      ctx.translate(p.x + p.w / 2, p.y + p.h);
+      ctx.scale(p.facing, 1);
+      ctx.drawImage(ghostArt, -spriteW / 2, -spriteH, spriteW, spriteH);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      return;
+    }
     var body = ctx.createLinearGradient(0, y, 0, y + h);
     body.addColorStop(0, warm ? '#ffe6a4' : '#b79bff');
     body.addColorStop(1, warm ? '#f0b846' : '#7f5df0');
@@ -1122,17 +1163,20 @@
   }
 
   // 按「CSS 显示宽度 × 设备像素比」决定画布的内部分辨率。
-  // 量化到 0.5 的倍数，避免窗口尺寸微调时反复重建各层。
+  // 精确匹配 CSS 像素与设备像素；量化会触发浏览器二次缩放，细线美术会发糊。
   function applyScale(force) {
     var dpr = window.devicePixelRatio || 1;
     var cssW = canvas.getBoundingClientRect().width || level.w;
-    var s = Math.min(3, Math.max(1, dpr * cssW / level.w));
-    s = Math.round(s * 2) / 2;
-    if (!force && s === renderScale) return;
+    var s = Math.min(4, Math.max(1, dpr * cssW / level.w));
+    if (!force && Math.abs(s - renderScale) < 0.01) return;
     renderScale = s;
     var pw = Math.round(level.w * s), ph = Math.round(level.h * s);
     canvas.width = lightCanvas.width = lampCanvas.width = pw;
     canvas.height = lightCanvas.height = lampCanvas.height = ph;
+    [ctx, lightCtx, lampCtx].forEach(function (c) {
+      c.imageSmoothingEnabled = true;
+      c.imageSmoothingQuality = 'high';
+    });
     tileLayer = null;                      // 各离屏层都要按新分辨率重建
     vignette = null;
     lightDirty = true;

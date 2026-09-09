@@ -45,6 +45,7 @@ index.html          游戏本体（放在根目录，GitHub Pages 直接就能�
 game.css
 src/levels.js       关卡数据（字符网格）
 src/engine.js       引擎
+art/README.md       美术源图、游戏导出图与重新导出说明
 ```
 
 ## 加关卡
