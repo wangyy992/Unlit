@@ -69,12 +69,11 @@ kbd { display:inline-block; min-width:20px; padding:1px 5px; border:1px solid #4
 .levels { display:flex; justify-content:flex-start; gap:6px; flex-wrap:wrap; }
 .levels button { width:32px; height:29px; padding:0; color:#9c9da5; font:11px/1 ui-monospace,monospace; }
 .levels button.current { color:#241d0f; border-color:#ffe5a6; background:linear-gradient(#f2d38c,#b7954b); box-shadow:0 0 12px rgba(255,211,118,.25); }
-.page-note { margin:18px 0 0; color:rgba(213,207,190,.58); text-align:center; font:italic 11px/1.5 Georgia,"Songti SC",serif; letter-spacing:2px; }
 @media (max-width:760px) { .topbar{align-items:flex-start;min-height:0;padding:12px 16px}.brand-mark{width:38px;height:38px}.brand-mark i,.brand-mark b{top:10px;width:15px;height:17px}.topbar h1{font-size:18px}.eyebrow{display:none}.topbar-right{gap:5px}button.ghost{padding:6px 8px;font-size:0}button.ghost>span{font-size:16px;margin:0}button.ghost kbd{display:none}.stage{padding:16px 10px 28px}.game-shell{padding:9px}.statusbar{grid-template-columns:1fr 1fr;gap:7px}.levelinfo{grid-column:1/-1;grid-row:1}.keys{display:none}.rules{grid-template-columns:1fr}.mission{grid-column:1}.level-select{align-items:flex-start} }
 @media (max-width:470px) { .chapter-heading{display:none}.overlay{padding:12px}.overlay h2{font-size:23px}.lead,.mission{display:none}.rule-card{padding:6px 8px}.level-select>span{display:none} }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important} }
 :root:fullscreen body { height:100vh; overflow:hidden; display:flex; flex-direction:column; background:#080a10; }
-:root:fullscreen .topbar,:root:fullscreen .chapter-heading,:root:fullscreen .page-note { display:none; }
+:root:fullscreen .topbar,:root:fullscreen .chapter-heading { display:none; }
 :root:fullscreen .stage { flex:1; min-height:0; max-width:none; width:100%; margin:0; display:flex; flex-direction:column; padding:10px 18px; }
 :root:fullscreen .game-shell { flex:1; min-height:0; display:flex; flex-direction:column; padding:10px; }
 :root:fullscreen .screen { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
