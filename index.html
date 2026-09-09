@@ -6,11 +6,14 @@
 <title>光与影 — 双人合作解谜</title>
 <meta name="description" content="一个双人同屏的合作解谜游戏：光灵只能待在光里，影灵只能待在暗处。推动灯，就同时改变了两个人的路。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0a12'/%3E%3Ccircle cx='11' cy='16' r='5.5' fill='%23ffd77a'/%3E%3Ccircle cx='21' cy='16' r='5.5' fill='%239b7bff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="game.css">
+<link rel="stylesheet" href="game.css?v=3">
 </head>
 <body>
 <header class="topbar">
-  <h1>光与影</h1>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"><i></i><b></b></span>
+    <div><span class="eyebrow">THE CHAMBER BETWEEN</span><h1>光与影</h1></div>
+  </div>
   <div class="topbar-right">
     <button type="button" id="fs" class="icon" title="全屏 (F)" aria-label="全屏 (F)">⛶</button>
     <button type="button" id="mute" class="icon" title="音效开关 (M)" aria-label="音效开关 (M)">🔊</button>
@@ -19,6 +22,8 @@
 </header>
 
 <main class="stage" id="stage">
+  <div class="chapter-heading" aria-hidden="true"><span></span><p>二人同行 · 一明一暗</p><span></span></div>
+  <section class="game-shell" aria-label="游戏区域">
   <div class="statusbar">
     <div class="meter" id="lumenMeter">
       <span class="tag lumen">光灵</span>
@@ -26,8 +31,9 @@
       <span class="keys">← → ↑</span>
     </div>
     <div class="levelinfo">
+      <small>当前试炼</small>
       <strong id="levelName">1. 分道</strong>
-      <span>死亡 <b id="deaths">0</b></span>
+      <span>消散次数 <b id="deaths">0</b></span>
     </div>
     <div class="meter" id="umbraMeter">
       <span class="keys">A D W</span>
@@ -40,35 +46,33 @@
     <canvas id="game" width="960" height="352" tabindex="0"></canvas>
 
     <div class="overlay" id="title">
-      <div class="panel">
-        <div class="panel-head">光 与 影</div>
-        <div class="panel-body">
-      <p class="lead">一个键盘，两个人。</p>
+      <div class="panel"><div class="panel-head">光 与 影</div><div class="panel-body">
+      <h2>光与影</h2>
+      <p class="lead">一个键盘，两种命运。</p>
       <div class="rules">
-        <p><b class="lumen">光灵</b>离开光就会消散 —— 用 <kbd>←</kbd> <kbd>→</kbd> 移动，<kbd>↑</kbd> 跳。</p>
-        <p><b class="umbra">影灵</b>被光照到就会消散 —— 用 <kbd>A</kbd> <kbd>D</kbd> 移动，<kbd>W</kbd> 跳。</p>
-        <p>带光晕的灯可以推着走。推灯，就同时改变了两个人的路。</p>
-        <p>两人<b>同时</b>站在各自的门里才算过关。</p>
+        <article class="rule-card lumen-card"><b class="lumen">光灵</b><span>依光而生</span><div><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd></div></article>
+        <article class="rule-card umbra-card"><b class="umbra">影灵</b><span>畏光而行</span><div><kbd>A</kbd><kbd>D</kbd><kbd>W</kbd></div></article>
+        <p class="mission">推动灯火，重塑两条道路。两人同时抵达各自的门，方能离开暗室。</p>
       </div>
-      <button type="button" id="startBtn" class="primary">开始 (Enter)</button>
-        </div>
-      </div>
+      <button type="button" id="startBtn" class="primary">踏入暗室 <span>ENTER</span></button>
+      </div></div>
     </div>
 
     <div class="overlay" id="complete" hidden>
-      <div class="panel">
-        <div class="panel-head">全 部 通 关</div>
-        <div class="panel-body">
-          <button type="button" id="replayBtn" class="primary">再玩一次 (Enter)</button>
-        </div>
-      </div>
+      <div class="panel"><div class="panel-head">全 部 通 关</div><div class="panel-body">
+        <h2>全部通关</h2>
+        <button type="button" id="replayBtn" class="primary">再玩一次 (Enter)</button>
+      </div></div>
     </div>
   </div>
 
-  <nav class="levels" id="levels" aria-label="选关"></nav>
+  <div class="level-select"><span>试炼回廊</span><nav class="levels" id="levels" aria-label="选关"></nav></div>
+  </section>
+  <p class="page-note">光会开路，也会封路。最安全的位置，往往属于另一个人。</p>
 </main>
 
-<script src="src/levels.js"></script>
-<script src="src/engine.js"></script>
+<script src="src/levels.js?v=3"></script>
+<script src="src/engine.js?v=3"></script>
 </body>
 </html>
+

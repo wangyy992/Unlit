@@ -96,76 +96,32 @@
 
   // ---------- 音效（WebAudio 现场合成，不需要素材文件）----------
   var audioCtx = null;
-  var noiseBuf = null;
-
-  function ensureAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    return audioCtx;
-  }
-
-  // 脚步声要用滤波白噪声 —— 纯振荡器只能出「哔」，做不出踩踏的质感
-  function footstep(freq, dur, gain) {
-    if (muted) return;
-    try {
-      ensureAudio();
-      if (!noiseBuf) {
-        noiseBuf = audioCtx.createBuffer(1, (audioCtx.sampleRate * 0.25) | 0, audioCtx.sampleRate);
-        var d = noiseBuf.getChannelData(0);
-        for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-      }
-      var t = audioCtx.currentTime;
-      var src = audioCtx.createBufferSource();
-      src.buffer = noiseBuf;
-      src.playbackRate.value = 0.85 + Math.random() * 0.3;   // 每步略有差异，免得像机器
-      var bp = audioCtx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = freq * (0.88 + Math.random() * 0.24);
-      bp.Q.value = 1.5;
-      var g = audioCtx.createGain();
-      g.gain.setValueAtTime(gain, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      src.connect(bp).connect(g).connect(audioCtx.destination);
-      src.start(t);
-      src.stop(t + dur);
-    } catch (err) { /* 音频不可用就静默跳过 */ }
-  }
-
   function beep(freq, dur, type, gain, delay) {
     if (muted) return;
     try {
-      ensureAudio();
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
       var t = audioCtx.currentTime + (delay || 0);
       var osc = audioCtx.createOscillator();
       var g = audioCtx.createGain();
-      var lp = audioCtx.createBiquadFilter();
-      lp.type = 'lowpass';                       // 削掉刺耳的高次谐波
-      lp.frequency.value = 2400;
       osc.type = type || 'sine';
       osc.frequency.setValueAtTime(freq, t);
-      // 瞬间起音会产生爆音，听着「一惊一乍」；给一小段起音坡就柔和了
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(gain || 0.04, t + 0.014);
+      g.gain.setValueAtTime(gain || 0.06, t);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      osc.connect(lp).connect(g).connect(audioCtx.destination);
+      osc.connect(g).connect(audioCtx.destination);
       osc.start(t);
       osc.stop(t + dur);
     } catch (err) { /* 音频不可用就静默跳过 */ }
   }
   var SFX = {
-    jump: function () { beep(430, 0.10, 'triangle', 0.020); },
-    land: function () { beep(150, 0.08, 'sine', 0.018); },
-    push: function () { beep(80, 0.07, 'triangle', 0.014); },
-    gate: function () { beep(440, 0.14, 'sine', 0.026); beep(660, 0.22, 'sine', 0.018, 0.10); },
-    door: function () { beep(720, 0.20, 'sine', 0.022); },
-    death: function () { beep(160, 0.40, 'triangle', 0.030); },
-    levelStart: function () { beep(392, 0.14, 'sine', 0.018); beep(587, 0.20, 'sine', 0.015, 0.10); },
-    win: function () { beep(587, 0.16, 'sine', 0.028); beep(784, 0.28, 'sine', 0.028, 0.13); },
-    // 两个角色的脚步分开：光灵清脆，影灵沉闷而轻 —— 听声就能分出是谁在走
-    step: function (type) {
-      if (type === 'lumen') footstep(900, 0.055, 0.018);
-      else footstep(520, 0.070, 0.013);
-    },
+    jump: function () { beep(520, 0.09, 'square', 0.035); },
+    land: function () { beep(170, 0.07, 'sine', 0.03); },
+    push: function () { beep(88, 0.06, 'sawtooth', 0.022); },
+    gate: function () { beep(520, 0.10, 'triangle', 0.045); beep(780, 0.18, 'triangle', 0.03, 0.09); },
+    door: function () { beep(920, 0.16, 'sine', 0.035); },
+    death: function () { beep(150, 0.35, 'sawtooth', 0.05); },
+    levelStart: function () { beep(440, 0.10, 'sine', 0.03); beep(660, 0.14, 'sine', 0.025, 0.09); },
+    win: function () { beep(660, 0.13, 'triangle', 0.05); beep(880, 0.22, 'triangle', 0.05, 0.12); },
   };
 
   // ---------- 关卡解析 ----------
@@ -183,7 +139,6 @@
       gateGroup: new Int8Array(cols * rows),
       gateOpen: [false, false, false, false],
       plates: [],
-      plateRuns: [],
       lamps: [],
       doors: {},
       edges: [],
@@ -227,21 +182,6 @@
         }
       }
     }
-    // 同一行相邻且同组的压力板本来就控制同一扇门（做成多格只是为了
-    // 防止玩家从高处跳下的抛物线越过窄板）。逐格重复贴图会看起来像
-    // 好几个按钮，所以合并成一个装置来画。
-    L.plates.slice().sort(function (a, b) { return a.ty - b.ty || a.tx - b.tx; })
-      .forEach(function (pl) {
-        var last = L.plateRuns[L.plateRuns.length - 1];
-        if (last && last.ty === pl.ty && last.group === pl.group && last.hold === pl.hold &&
-            pl.tx === last.tx + last.w) {
-          last.w++;
-          last.items.push(pl);
-        } else {
-          L.plateRuns.push({ tx: pl.tx, ty: pl.ty, w: 1, x: pl.x, y: pl.y,
-                             group: pl.group, hold: pl.hold, items: [pl] });
-        }
-      });
     return L;
   }
 
@@ -449,12 +389,12 @@
       var g = lampCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
       // 亮度必须在判定边界（半径的 55%）之后迅速收掉，
       // 否则玩家会看到一片「看着危险其实安全」的光晕，读不准哪里能站。
-      g.addColorStop(0.00, 'rgba(255, 246, 214, 0.96)');   // 核心接近白，边缘转琥珀，
-      g.addColorStop(0.18, 'rgba(255, 219, 152, 0.74)');   // 亮区内部才有冷暖层次，
-      g.addColorStop(0.40, 'rgba(248, 180, 100, 0.46)');   // 不至于糊成一片平黄
-      g.addColorStop(0.55, 'rgba(232, 146, 74, 0.22)');
-      g.addColorStop(0.68, 'rgba(206, 118, 56, 0.02)');
-      g.addColorStop(1.00, 'rgba(190, 105, 50, 0)');
+      g.addColorStop(0.00, 'rgba(255, 232, 178, 0.95)');
+      g.addColorStop(0.20, 'rgba(255, 212, 142, 0.72)');
+      g.addColorStop(0.40, 'rgba(250, 186, 106, 0.45)');
+      g.addColorStop(0.55, 'rgba(238, 158, 82, 0.22)');
+      g.addColorStop(0.68, 'rgba(214, 128, 62, 0.02)');
+      g.addColorStop(1.00, 'rgba(200, 115, 55, 0)');
       lampCtx.fillStyle = g;
       lampCtx.beginPath();
       lampCtx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -539,14 +479,6 @@
     movePlayerX(p, p.vx * dt);
     movePlayerY(p, p.vy * dt);
     if (p.onGround && !wasGround && fallSpeed > 240) SFX.land();
-
-    // 按位移触发脚步：按时间触发的话，减速时步频不变会很假
-    if (p.onGround) {
-      p.stepDist = (p.stepDist || 0) + Math.abs(p.vx) * dt;
-      if (p.stepDist > 88) { p.stepDist = 0; SFX.step(p.type); }
-    } else {
-      p.stepDist = 70;                    // 落地后很快踏出第一步
-    }
 
     p.anim += Math.abs(p.vx) * dt * 0.05;
   }
@@ -676,30 +608,10 @@
     drawTiles();
 
     if (lightDirty) renderLightMap();
-
-    // 关键：光不是加上去的，而是把盖在场景上的黑暗「挖」开。
-    // 加法合成会把亮区推到饱和，纹理全被烧掉 —— 照亮的地方反而比暗处更没细节。
-    shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
-    shadowCtx.globalCompositeOperation = 'source-over';
-    shadowCtx.clearRect(0, 0, shadowCanvas.width, shadowCanvas.height);
-    shadowCtx.fillStyle = 'rgba(6, 10, 24, 0.89)';  // 深蓝而非中性黑：与暖光拉开色温差；
-    // 也别压到纯黑，暗处的地形仍要可读
-    shadowCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
-    shadowCtx.globalCompositeOperation = 'destination-out';
-    shadowCtx.drawImage(lightCanvas, 0, 0);          // 光照图的 alpha 就是「挖掉多少」
-    shadowCtx.globalCompositeOperation = 'source-over';
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(shadowCanvas, 0, 0);
-    ctx.restore();
-
-    ctx.globalCompositeOperation = 'lighter';        // 只留一点暖色辉光做氛围
-    ctx.globalAlpha = 0.24;
+    ctx.globalCompositeOperation = 'lighter';
     ctx.drawImage(lightCanvas, 0, 0, L.w, L.h);
-    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
-    drawGates();
     drawPlates();
     drawDoor(L.doors.umbra, 'umbra', L.umbra.atDoor);
     drawDoor(L.doors.lumen, 'lumen', L.lumen.atDoor);
@@ -733,7 +645,7 @@
       var g = vc.createRadialGradient(L.w / 2, L.h / 2, Math.min(L.w, L.h) * 0.35,
                                       L.w / 2, L.h / 2, Math.max(L.w, L.h) * 0.72);
       g.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      g.addColorStop(1, 'rgba(4, 8, 22, 0.34)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
       vc.fillStyle = g;
       vc.fillRect(0, 0, L.w, L.h);
     }
@@ -741,7 +653,6 @@
   }
 
   var vignette = null;
-  var shadowCanvas = null, shadowCtx = null;
 
   // 素材是可选的：任何一张加载失败都只是回退到程序绘制，不影响游戏运行
   var ART = {};
@@ -814,11 +725,7 @@
     if (!tileLayer || tileLayerArt !== !!ART.wall) { tileLayerArt = !!ART.wall; renderTileLayer(); }
     ctx.drawImage(tileLayer, 0, 0, L.w, L.h);
 
-  }
-
-  function drawGates() {
-    var L = level;
-    for (var ty = 0; ty < L.rows; ty++) {
+    for (var ty = 0; ty < L.rows; ty++) {          // 墙已经在离屏图里，这里只画会动的机关门
       for (var tx = 0; tx < L.cols; tx++) {
         var g = L.gateGroup[ty * L.cols + tx];
         if (g < 0) continue;
@@ -864,43 +771,41 @@
   var GATE_COLORS = ['#6fe3c4', '#7fb3ff', '#d79bff', '#ffb37f'];
 
   function drawPlates() {
-    level.plateRuns.forEach(function (run) {
-      var color = GATE_COLORS[run.group];
-      var pressed = run.items.some(function (pl) { return pl.pressed; });
-      var w = run.w * TILE;                             // 整条压力板画成一个装置
-      var cx = run.x + w / 2;
+    level.plates.forEach(function (pl) {
+      var color = GATE_COLORS[pl.group];
+      var h = pl.pressed ? 5 : 10;
+      var y = pl.y + TILE - h;
 
       if (ART.pressurePlate) {
-        var ph = pressed ? 10 : 15;
-        ctx.drawImage(ART.pressurePlate, run.x - 3, run.y + TILE - ph, w + 6, ph);
-        ctx.fillStyle = hexToRgba(color, pressed ? 0.44 : 0.24);
-        ctx.fillRect(run.x + 5, run.y + TILE - ph + 4, w - 10, 3);
-        if (run.hold) {                                 // 常压板：两端卡口，表示「压住才算」
+        var ph = pl.pressed ? 10 : 15;
+        ctx.drawImage(ART.pressurePlate, pl.x - 3, pl.y + TILE - ph, TILE + 6, ph);
+        ctx.fillStyle = hexToRgba(color, pl.pressed ? 0.44 : 0.24);
+        ctx.fillRect(pl.x + 5, pl.y + TILE - ph + 4, TILE - 10, 3);
+        if (pl.hold) {
           ctx.strokeStyle = hexToRgba(color, 0.9);
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(run.x + 1, run.y + TILE - ph - 2, w - 2, ph + 2);
+          ctx.strokeRect(pl.x + 1, pl.y + TILE - ph - 2, TILE - 2, ph + 2);
         }
         return;
       }
 
-      var h = pressed ? 5 : 10;
-      var y = run.y + TILE - h;
       // 底座 + 与机关门同色的顶面，让「这块板对应那扇门」一眼可读
       ctx.fillStyle = 'rgba(20, 24, 38, 0.9)';
-      ctx.fillRect(run.x + 2, y, w - 4, h);
-      ctx.fillStyle = pressed ? color : 'rgba(150, 162, 196, 0.9)';
-      ctx.fillRect(run.x + 2, y, w - 4, 3);
-      if (run.hold) {
+      ctx.fillRect(pl.x + 2, y, TILE - 4, h);
+      ctx.fillStyle = pl.pressed ? color : 'rgba(150, 162, 196, 0.9)';
+      ctx.fillRect(pl.x + 2, y, TILE - 4, 3);
+      if (pl.hold) {                                    // 常压板：画一对卡口，表示「压住才算」
         ctx.fillStyle = hexToRgba(color, 0.75);
-        ctx.fillRect(run.x + 1, y - 5, 3, 6);
-        ctx.fillRect(run.x + w - 4, y - 5, 3, 6);
+        ctx.fillRect(pl.x + 1, y - 5, 3, 6);
+        ctx.fillRect(pl.x + TILE - 4, y - 5, 3, 6);
       }
 
-      var glow = ctx.createRadialGradient(cx, y, 0, cx, y, pressed ? w * 0.8 : w * 0.5);
-      glow.addColorStop(0, hexToRgba(color, pressed ? 0.5 : 0.22));
+      var glow = ctx.createRadialGradient(
+        pl.x + TILE / 2, y, 0, pl.x + TILE / 2, y, pl.pressed ? 26 : 16);
+      glow.addColorStop(0, hexToRgba(color, pl.pressed ? 0.5 : 0.22));
       glow.addColorStop(1, hexToRgba(color, 0));
       ctx.fillStyle = glow;
-      ctx.fillRect(run.x - 12, y - 22, w + 24, 26);
+      ctx.fillRect(pl.x - 12, y - 22, TILE + 24, 26);
     });
   }
 
@@ -975,8 +880,8 @@
       var artLamp = lamp.fixed ? ART.lampFixed : ART.lampPush;
       if (artLamp) {
         // 贴图灯：按原比例画，底边对齐碰撞盒底部（碰撞盒仍是 30x30，贴图只是外观）
-        var lh = 46;                                  // 按高度统一，两张贴图长宽比不同
-        var lw = lh * artLamp.naturalWidth / artLamp.naturalHeight;
+        var lw = lamp.w + 4;
+        var lh = lw * artLamp.naturalHeight / artLamp.naturalWidth;
         ctx.drawImage(artLamp, cx - lw / 2, lamp.y + lamp.h - lh, lw, lh);
         var core = ctx.createRadialGradient(cx, cy - lh * 0.18, 0, cx, cy - lh * 0.18, lw * 0.75);
         core.addColorStop(0, 'rgba(255, 246, 214, 0.95)');   // 灯芯：正好盖住玻璃罩里的残留
@@ -1267,9 +1172,8 @@
     if (!force && Math.abs(s - renderScale) < 0.01) return;
     renderScale = s;
     var pw = Math.round(level.w * s), ph = Math.round(level.h * s);
-    if (!shadowCanvas) { shadowCanvas = document.createElement('canvas'); shadowCtx = shadowCanvas.getContext('2d'); }
-    canvas.width = lightCanvas.width = lampCanvas.width = shadowCanvas.width = pw;
-    canvas.height = lightCanvas.height = lampCanvas.height = shadowCanvas.height = ph;
+    canvas.width = lightCanvas.width = lampCanvas.width = pw;
+    canvas.height = lightCanvas.height = lampCanvas.height = ph;
     [ctx, lightCtx, lampCtx].forEach(function (c) {
       c.imageSmoothingEnabled = true;
       c.imageSmoothingQuality = 'high';
@@ -1380,3 +1284,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
