@@ -94,6 +94,52 @@
     }
   }
 
+  function setVirtualKey(code, pressed) {
+    if (pressed) {
+      if (keys[code]) return;
+      keys[code] = true;
+      if (level && state === 'playing') {
+        if (code === 'ArrowUp') level.lumen.jumpBuffer = JUMP_BUFFER;
+        if (code === 'KeyW') level.umbra.jumpBuffer = JUMP_BUFFER;
+      }
+    } else {
+      keys[code] = false;
+      if (level && state === 'playing') {
+        if (code === 'ArrowUp' && level.lumen.vy < 0) level.lumen.vy *= JUMP_CUT;
+        if (code === 'KeyW' && level.umbra.vy < 0) level.umbra.vy *= JUMP_CUT;
+      }
+    }
+  }
+
+  function bindTouchControls() {
+    Array.prototype.forEach.call(els.touchControls.querySelectorAll('[data-code]'), function (btn) {
+      var code = btn.getAttribute('data-code');
+      var release = function (e) {
+        if (e) e.preventDefault();
+        setVirtualKey(code, false);
+        btn.classList.remove('pressed');
+      };
+      btn.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        booted = true;
+        ensureAudio();
+        setVirtualKey(code, true);
+        btn.classList.add('pressed');
+        try { btn.setPointerCapture(e.pointerId); } catch (err) { /* old WebView */ }
+      });
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+      btn.addEventListener('lostpointercapture', release);
+      btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    });
+    window.addEventListener('blur', function () {
+      Array.prototype.forEach.call(els.touchControls.querySelectorAll('[data-code]'), function (btn) {
+        setVirtualKey(btn.getAttribute('data-code'), false);
+        btn.classList.remove('pressed');
+      });
+    });
+  }
+
   // ---------- 音效（WebAudio 现场合成，不需要素材文件）----------
   var audioCtx = null;
   var noiseBuf = null;
@@ -1131,6 +1177,7 @@
     els.umbraMeter.classList.toggle('danger', level.umbra.meter < 0.4);
     els.complete.hidden = state !== 'complete';
     els.title.hidden = state !== 'title';
+    els.touchControls.hidden = state !== 'playing';
     renderLevelButtons();
   }
 
@@ -1348,7 +1395,7 @@
     lampCtx = lampCanvas.getContext('2d');
 
     ['levelName', 'deaths', 'levels', 'lumenBar', 'umbraBar',
-      'lumenMeter', 'umbraMeter', 'title', 'complete', 'mute'].forEach(function (id) {
+      'lumenMeter', 'umbraMeter', 'title', 'complete', 'mute', 'touchControls'].forEach(function (id) {
       els[id] = document.getElementById(id);
     });
 
@@ -1357,6 +1404,7 @@
     document.getElementById('startBtn').addEventListener('click', start);
     document.getElementById('replayBtn').addEventListener('click', function () { deaths = 0; loadLevel(0); });
     document.getElementById('restartBtn').addEventListener('click', function () { restart(); canvas.focus(); });
+    bindTouchControls();
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
