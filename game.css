@@ -48,6 +48,15 @@ button.primary span { margin-left:10px; font:9px/1 ui-monospace,monospace; lette
 .levelinfo strong { display:block; margin:1px 0; color:#f4f0e7; font:600 15px/1.3 Georgia,"Songti SC",serif; letter-spacing:1px; }
 .levelinfo span { color:var(--dim); font-size:10px; } .levelinfo b { color:#ded9cd; }
 .screen { position:relative; line-height:0; overflow:hidden; border-radius:8px; box-shadow:0 0 0 1px #06070b,0 0 0 3px rgba(147,129,91,.2),inset 0 0 30px #000; }
+.touch-controls { display:none; grid-template-columns:1fr 1fr; gap:clamp(24px,12vw,120px); margin:11px 4px 2px; user-select:none; -webkit-user-select:none; }
+.touch-controls[hidden] { display:none!important; }
+.touch-player { display:grid; grid-template-columns:repeat(3,minmax(46px,62px)); justify-content:start; gap:7px; }
+.touch-player:last-child { justify-content:end; }
+.touch-player>span { grid-column:1/-1; color:var(--dim); font:700 10px/1 ui-monospace,monospace; letter-spacing:2px; text-align:center; }
+.touch-player button { min-height:48px; padding:0; touch-action:none; font:800 22px/1 system-ui,sans-serif; border-radius:12px; }
+.lumen-touch button { color:var(--lumen); border-color:rgba(255,215,122,.42); }
+.umbra-touch button { color:var(--umbra); border-color:rgba(166,138,255,.48); }
+.touch-player button.pressed { transform:translateY(2px) scale(.97); background:#34394a; box-shadow:inset 0 3px 8px rgba(0,0,0,.45),0 0 16px currentColor; }
 canvas { display:block; width:100%; max-width:var(--natural-width,960px); margin:0 auto; background:#07070d; outline:none; }
 canvas:focus-visible { box-shadow:inset 0 0 0 2px var(--brass); }
 .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:22px; text-align:center; line-height:1.6; background:radial-gradient(circle at 50% 38%,rgba(50,48,61,.66),transparent 45%),linear-gradient(90deg,rgba(10,11,17,.97),rgba(17,18,27,.9),rgba(10,11,17,.97)); backdrop-filter:blur(3px); }
@@ -71,6 +80,8 @@ kbd { display:inline-block; min-width:20px; padding:1px 5px; border:1px solid #4
 .levels button.current { color:#241d0f; border-color:#ffe5a6; background:linear-gradient(#f2d38c,#b7954b); box-shadow:0 0 12px rgba(255,211,118,.25); }
 @media (max-width:760px) { .topbar{align-items:flex-start;min-height:0;padding:12px 16px}.brand-mark{width:38px;height:38px}.brand-mark i,.brand-mark b{top:10px;width:15px;height:17px}.topbar h1{font-size:18px}.eyebrow{display:none}.topbar-right{gap:5px}button.ghost{padding:6px 8px;font-size:0}button.ghost>span{font-size:16px;margin:0}button.ghost kbd{display:none}.stage{padding:16px 10px 28px}.game-shell{padding:9px}.statusbar{grid-template-columns:1fr 1fr;gap:7px}.levelinfo{grid-column:1/-1;grid-row:1}.keys{display:none}.rules{grid-template-columns:1fr}.mission{grid-column:1}.level-select{align-items:flex-start} }
 @media (max-width:470px) { .chapter-heading{display:none}.overlay{padding:12px}.overlay h2{font-size:23px}.lead,.mission{display:none}.rule-card{padding:6px 8px}.level-select>span{display:none} }
+@media (pointer:coarse), (max-width:900px) { .touch-controls:not([hidden]){display:grid}.stage{padding-bottom:18px}.touch-player{grid-template-columns:repeat(3,minmax(42px,60px))}.touch-player button{min-height:46px} }
+@media (orientation:portrait) and (max-width:760px) { .touch-controls{gap:14px}.touch-player{grid-template-columns:repeat(3,minmax(38px,1fr))}.touch-player button{min-height:44px}.level-select{margin-top:9px} }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important} }
 :root:fullscreen body { height:100vh; overflow:hidden; display:flex; flex-direction:column; background:#080a10; }
 :root:fullscreen .topbar,:root:fullscreen .chapter-heading { display:none; }
